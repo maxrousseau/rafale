@@ -1,8 +1,9 @@
 from dataclasses import dataclass
-
 import torch
 import torch.nn.functional as F
-import xformers.ops as xops
+
+# import xformers.ops as xops
+
 from torch import nn
 from torch.nn.functional import scaled_dot_product_attention
 
@@ -30,6 +31,7 @@ class Embedding(nn.Module):
         self.position_embeddings = nn.Embedding(
             num_embeddings=max_sequence_length,
             embedding_dim=hidden_size,
+            # padding_idx=pad_token_id, ROBERTA only?
         )
         self.token_type_embeddings = nn.Embedding(
             num_token_type, hidden_size
@@ -42,12 +44,15 @@ class Embedding(nn.Module):
         self.register_buffer(
             "position_ids",
             torch.arange(max_sequence_length).expand((1, -1)),
+            persistent=False,
         )
 
     def forward(self, input_ids, token_type_ids):
         seq_length = input_ids.size(1)
 
-        position_ids = self.position_ids[:seq_length]
+        position_ids = torch.index_select(
+            self.position_ids, 1, torch.arange(seq_length)
+        )
         position_ids = position_ids.expand_as(input_ids)
 
         # we assume absolute positional encoding here like in the original BERT and sum everything up
@@ -142,12 +147,13 @@ class MultiHeadAttention(nn.Module):
         # https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html#torch.nn.functional.scaled_dot_product_attention
         # check for flash-attn-2? optional
         if self.fast_attn:
-            attn_output = xops.memory_efficient_attention(
-                q,
-                k,
-                v,
-                p=self.dropout_p,
-            )
+            raise Exception("fast attention not implemented yet")
+            # attn_output = xops.memory_efficient_attention(
+            #     q,
+            #     k,
+            #     v,
+            #     p=self.dropout_p,
+            # )
 
         else:
             attn_output = scaled_dot_product_attention(
@@ -238,7 +244,7 @@ class MLMHead(nn.Module):
         return x
 
 
-class SlamEncoder(nn.Module):
+class EncoderWrapper(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -397,7 +403,6 @@ def get_tokens_from_logits(logits, tokenizer=None):
 
 @dataclass
 class Config:
-    # defaults >> "microsoft/BiomedNLP-BiomedBERT-base-uncased-abstract-fulltext"
     embed_dim: int = 768
     vocab_size: int = 30522  # could usage would be to 30522 + num_extra_tokens
     attention_dropout: float = 0.1
