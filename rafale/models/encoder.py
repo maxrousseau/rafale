@@ -122,9 +122,65 @@ class MultiHeadAttention(nn.Module):
 
         """
 
+
+# @TODO: separate the attention modules to more easily inspect tensors
+class EncoderSelfAttention(nn.Module):
+    """just MHA with the various implementations
+    so input q, k, v are essentially the same tensor since we're doing self attention but the idea here is that this
+    same implementation could be used for cross attention.
+
+    in self-attention they have dimension [batch_size, sequence_length, embedding_dimension] so for bert that would
+    be like [4, 512, 768] for example.
+
+    each attention head will handle part of the embedding dimensions (wow I didn't know that and don't fully
+    understand why...). So this is why we want to have embed_dim % n_head == 0.
+
+    (1) we use view to reshape the tensor into shape [batch_size, seq_length, n_head, head_embed] --> .view(batch_size,
+    -1, self.num_heads, self.head_dim)
+    (2) then we transpose seq_length and n_head to parrellalize the computations during the attention computations
+    --> .transpose(1, 2)
+
+
+    ## Summary of Shape Changes
+    Input: [batch_size, seq_length, embed_dim]
+    Post Linear Layer: [batch_size, seq_length, embed_dim] (same shape, but transformed)
+    View for Heads: [batch_size, seq_length, num_heads, head_dim]
+    Transpose for Heads: [batch_size, num_heads, seq_length, head_dim]
+
+    ## after having applied attention
+    We receive a tensor of shape [batch_size, num_heads, seq_length, head_dim] (same as before)
+    Now we want to get back to our original embedding and sequence shape so first we swap back num_head and
+    seq_length with --> .transpose(1,2)
+    Then we want to aggregate our head_dim to have our full embedding space back up together again with -->
+    .view(batch_size, -1, self.embed_dim)
+    and we get shape [batch_size, seq_length, embed_dim] at the end
+
+    """
+
+    def __init__(self, n_heads, embed_dim, dropout_p=0.1, fast_attn=False):
+        "uses xformers memory effeicient attention"
+        super().__init__()
+        self.dropout_p = dropout_p
+        self.fast_attn = fast_attn
+        assert embed_dim % n_heads == 0
+
+        # We assume d_v always equals d_k
+        self.head_dim = embed_dim // n_heads
+        self.n_heads = n_heads
+        self.embed_dim = embed_dim
+        self.all_head_size = n_heads * self.head_dim
+
+        # get linear projections
+        self.query = nn.Linear(embed_dim, embed_dim)
+        self.key = nn.Linear(embed_dim, embed_dim)
+        self.value = nn.Linear(embed_dim, embed_dim)
+
+    def forward(self, q, k, v):
+        # @HERE TODO
+        """"""
         batch_size = q.size(0)
         if not self.training:
-            self.dropout = 0
+            self.dropout_p = 0
             print("model not training, attention dropout is 0")
 
         # check transformation again here....
@@ -169,7 +225,25 @@ class MultiHeadAttention(nn.Module):
             .contiguous()
             .view(batch_size, -1, self.embed_dim)
         )
-        return self.out(attn_output)
+
+        return attn_output
+
+
+class AttentionModule(nn.Module):
+    """the actual block with the output projections"""
+
+    # output
+    def __init__(self, n_heads, embed_dim, dropout_p=None, fast_attn=False):
+        super().__init__()
+        self.self_attn = EncoderSelfAttention(
+            n_heads, embed_dim, dropout_p=None, fast_attn=False
+        )
+        self.out = nn.Linear(embed_dim, embed_dim)
+
+    def forward(self, x):
+        attn_output = self.self_attn(x, x, x)
+        out = self.out(attn_output)
+        return out
 
 
 class FeedForward(nn.Module):
@@ -203,7 +277,11 @@ class EncoderBlock(nn.Module):
     def __init__(self, embed_dim, n_heads, ff_dim, eps=None, dropout_p=None):
         super().__init__()
 
-        self.mha = MultiHeadAttention(
+        # self.mha = MultiHeadAttention(
+        #     n_heads=n_heads, embed_dim=embed_dim, dropout_p=dropout_p
+        # )
+
+        self.attention = AttentionModule(
             n_heads=n_heads, embed_dim=embed_dim, dropout_p=dropout_p
         )
         self.add_norm_1 = AddNorm(embed_dim, eps=eps, dropout_p=dropout_p)
@@ -212,7 +290,7 @@ class EncoderBlock(nn.Module):
 
     def forward(self, x):
         residual_1 = x
-        x = self.mha(x, x, x)
+        x = self.attention(x)
         x = self.add_norm_1(x, residual_1)
 
         residual_2 = x
@@ -282,6 +360,17 @@ class EncoderWrapper(nn.Module):
 
     # no bias for MLM head (?), let's keep it since the HF implementation keeps it as well
     # self.mlm_head.mlm[-1].bias = None
+    def forward(self, **kwargs):
+        input_ids = kwargs["input_ids"]
+        token_type_ids = kwargs["token_type_ids"]
+
+        x = self.embedding_layer(input_ids, token_type_ids)
+        # x = self.encoder_blocks(x)
+        for block in self.blocks:
+            x = block(x)
+        x = self.mlm_head(x)
+
+        return x
 
     def compute_decoupled_label_loss(self, logits, labels, permutations, tokenizer):
         """ """
@@ -371,16 +460,6 @@ class EncoderWrapper(nn.Module):
 
         # Compute and return the loss
         return ce_loss(logits, labels)
-
-    def forward(self, **kwargs):
-        input_ids = kwargs["input_ids"]
-        token_type_ids = kwargs["token_type_ids"]
-        x = self.embedding_layer(input_ids, token_type_ids)
-        for block in self.blocks:
-            x = block(x)
-        x = self.mlm_head(x)
-
-        return x
 
 
 # DELETE THIS

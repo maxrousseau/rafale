@@ -24,8 +24,8 @@ def convert_bert_params_dict(target, source):
     conversion = [
         ("bert.embeddings", "embedding_layer"),
         ("bert.encoder.layer", "blocks"),
-        ("attention.self", "mha"),
-        ("attention.output.dense", "mha.out"),
+        ("attention.self", "attention.self_attn"),
+        ("attention.output.dense", "attention.out"),
         ("attention.output.LayerNorm", "add_norm_1.ln"),
         ("intermediate.dense", "ff.ff_in"),
         ("output.dense", "ff.ff_out"),
