@@ -31,7 +31,7 @@ class Embedding(nn.Module):
         self.position_embeddings = nn.Embedding(
             num_embeddings=max_sequence_length,
             embedding_dim=hidden_size,
-            # padding_idx=pad_token_id, ROBERTA only?
+            padding_idx=pad_token_id,  # ROBERTA only?
         )
         self.token_type_embeddings = nn.Embedding(
             num_token_type, hidden_size
@@ -68,7 +68,7 @@ class Embedding(nn.Module):
 
 
 class MultiHeadAttention(nn.Module):
-    def __init__(self, n_heads, embed_dim, dropout_p=None, fast_attn=False):
+    def __init__(self, n_heads, embed_dim, dropout_p=0.1, fast_attn=False):
         "uses xformers memory effeicient attention"
         super().__init__()
         self.dropout_p = dropout_p
@@ -189,8 +189,8 @@ class FeedForward(nn.Module):
 class AddNorm(nn.Module):
     def __init__(self, embed_dim, eps=None, dropout_p=None):
         super().__init__()
-        self.dropout = nn.Dropout(dropout_p)
         self.ln = nn.LayerNorm(embed_dim, eps=eps)
+        self.dropout = nn.Dropout(dropout_p)
 
     def forward(self, x, residual):
         x = self.dropout(x)
@@ -402,7 +402,7 @@ def get_tokens_from_logits(logits, tokenizer=None):
 
 
 @dataclass
-class Config:
+class BertConfig:
     embed_dim: int = 768
     vocab_size: int = 30522  # could usage would be to 30522 + num_extra_tokens
     attention_dropout: float = 0.1
