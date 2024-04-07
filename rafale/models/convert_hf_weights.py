@@ -59,8 +59,8 @@ def convert_roberta_params_dict(target, source):
     conversion = [
         ("roberta.embeddings", "embedding_layer"),
         ("roberta.encoder.layer", "blocks"),
-        ("attention.self", "mha"),
-        ("attention.output.dense", "mha.out"),
+        ("attention.self", "attention.self_attn"),
+        ("attention.output.dense", "attention.out"),
         ("attention.output.LayerNorm", "add_norm_1.ln"),
         ("intermediate.dense", "ff.ff_in"),
         ("output.dense", "ff.ff_out"),

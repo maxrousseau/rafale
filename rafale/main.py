@@ -15,8 +15,8 @@ args = parser.parse_args()
 
 def main():
     # load/parse yaml config
-    with open(args.config, "r") as file:
-        config = yaml.safe_load(file)
+    with open(args.config, "r") as f:
+        config = yaml.safe_load(f)
 
     print(config["run"]["name"])
     print(config["model"])

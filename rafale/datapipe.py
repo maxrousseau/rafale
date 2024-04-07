@@ -107,6 +107,7 @@ class WikiMLMPipe(DataPipeline):
             padding=self.padding,
             max_length=self.max_sequence_length,
             truncation=self.truncation,
+            return_token_type_ids=True,
         )
 
         batch = {k: v for k, v in source_tokenized.items()}
