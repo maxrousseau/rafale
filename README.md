@@ -4,7 +4,7 @@ Rafale is (for now) a simple and opinionated transformer encoder training CLI.
 
 ## Dependencies
 
-Attempting to balance ergonomics and simplicity.
+Attempting to balance ergonomics and simplicity. This is meant to be easily hackable for research purposes.
 
 ```
 torch, lightning-fabric (or) accelerate, datasets, rich (eyecandy) ~~tokenizers will be removed~~
@@ -37,6 +37,8 @@ rafale run -c config.yaml # set DEBUG=1 for a sanity check
 
 v0.1
 - [ ] Local model weight loading
+- [ ] load weights from safetensors and include it in the config (BERT and GPT2)
+- [ ] integration with lighteval (?)
 - [ ] Logging/Progress/Debug outputs with Rich library
 - ~~RoBERTa BPE tokenizer with TikToken (compare w/ HF), on the fly tokenization to be handled by dataloader's
       collator (for MLM)~~

@@ -157,7 +157,7 @@ class EncoderSelfAttention(nn.Module):
 
     """
 
-    def __init__(self, n_heads, embed_dim, dropout_p=0.1, fast_attn=False):
+    def __init__(self, n_heads, embed_dim, dropout_p=None, fast_attn=False):
         "uses xformers memory effeicient attention"
         super().__init__()
         self.dropout_p = dropout_p
@@ -216,7 +216,7 @@ class EncoderSelfAttention(nn.Module):
                 q,
                 k,
                 v,
-                dropout_p=self.dropout_p,
+                dropout_p=dropout_p,
             )
 
         # Concatenate heads and put through final linear layer
