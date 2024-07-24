@@ -1,23 +1,29 @@
 # rafale
 
-an opinionated encoder training library
+Rafale is (for now) a simple and opinionated transformer encoder training CLI.
 
 ## Dependencies
 
-An attempt to keep them as minimal as possible (while also being ergonomic).
+Attempting to balance ergonomics and simplicity.
 
 ```
 torch, lightning-fabric (or) accelerate, datasets, rich (eyecandy) ~~tokenizers will be removed~~
 ```
 
+@TODO :: (check out this stream on HF accelerate)[https://www.youtube.com/watch?v=X-Jx5-YskKY]
+
+
 ## Purpose
 
 This package is solely built to be an efficient research tool. It will not support data preprocessing/handling
-pipelines. It should be thought of as a starting point for research projects to bootstrap experiments on LMs.
+pipelines. It should be thought of as a starting point for research projects to bootstrap experiments on small LMs.
 
-Should be used pip installable and setup to be easily hackable to build on top of it.
+Should be used pip installable via git and setup to be easily hackable to build on top of it.
 
-Datasets should be preshuffled and pretokenized, only load it from disk and feed it to the dataloader with the collator function.
+Datasets should be preshuffled and pretokenized, only load it from disk and feed it to the dataloader with the collator
+function.
+
+## Usage
 
 Mostly optimized for SLURM clusters.
 
