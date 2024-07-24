@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rafale"
+version = "0.1"
+description = "simple transformer training lib"
+readme = "README.md"
+requires-python = ">=3.6"
+license = {text = "MIT"}
+
+[project.urls]
+homepage = "https://github.com/maxrousseau/rafale"
+
+[project.authors]
+name = "Maxime Rousseau"
+
+[tool.setuptools.packages.find]
+where = ["rafale"]
+
+[project.optional-dependencies]
+# Add any optional dependencies here, if applicable
