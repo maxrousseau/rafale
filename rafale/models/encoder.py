@@ -181,7 +181,6 @@ class EncoderSelfAttention(nn.Module):
         batch_size = q.size(0)
         if not self.training:
             self.dropout_p = 0
-            print("model not training, attention dropout is 0")
 
         # check transformation again here....
         q = (

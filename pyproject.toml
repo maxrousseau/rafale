@@ -1,20 +1,20 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "rafale"
 version = "0.1"
 description = "simple transformer training lib"
 readme = "README.md"
-requires-python = ">=3.6"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 
 [project.urls]
 homepage = "https://github.com/maxrousseau/rafale"
 
-[project.authors]
-name = "Maxime Rousseau"
+#[project.authors]
+#name = [{name="Maxime Rousseau", email=""}]
 
 [tool.setuptools.packages.find]
 where = ["rafale"]
