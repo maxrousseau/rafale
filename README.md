@@ -49,10 +49,11 @@ rafale run -c config.yaml # set DEBUG=1 for a sanity check
 
 | Name    | Implemented | Inference test | Training test |
 |:--------|:------------|:---------------|:--------------|
-| BERT    | [x]         | [ ]            | [ ]           |
-| RoBERTa | [x]         | [ ]            | [ ]           |
-| Pythia  | [ ]         | [ ]            | [ ]           |
-| S4      | [ ]         | [ ]            | [ ]           |
+| BERT    | ✅          |                |               |
+| RoBERTa | ✅          |                |               |
+| Pythia  |             |                |               |
+| S4      |             |                |               |
+
 
 
 ## Roadmap
