@@ -33,12 +33,22 @@ rafale run -c config.yaml # set DEBUG=1 for a sanity check
 
 ```
 
+## Supported models
+
+
+| Name    | Implemented | Inference test | Training test |
+|:--------|:------------|:---------------|:--------------|
+| BERT    | [x]         | [ ]            | [ ]           |
+| RoBERTa | [x]         | [ ]            | [ ]           |
+| Pythia  | [ ]         | [ ]            | [ ]           |
+| S4      | [ ]         | [ ]            | [ ]           |
+
+
 ## Roadmap
 
 v0.1
-- [ ] Local model weight loading
-- [ ] load weights from safetensors and include it in the config (BERT and GPT2)
-- [ ] integration with lighteval (?)
+- [ ] load weights from safetensors and include it in the config (BERT and Pythia)
+- [ ] integration with lighteval (or LM eval harness)
 - [ ] Logging/Progress/Debug outputs with Rich library
 - ~~RoBERTa BPE tokenizer with TikToken (compare w/ HF), on the fly tokenization to be handled by dataloader's
       collator (for MLM)~~
@@ -53,8 +63,10 @@ v0.1
   + **layerwise decay** for fine-tuning (https://kozodoi.me/blog/20220329/discriminative-lr)
   + optimizations : flash attn2, xformers layer_norm (triton) or RMSNorm, xformers fused_linear_layer
   + RMSNorm
-- [ ] simple trainer (see lightning-fabric simple trainer example and start from there)
+- [ ] Mosaic Composer/Trainer (see lightning-fabric simple trainer example and start from there)
   + bf16/fp16, gradient clipping, and gradient accumulation
+  + building blocks are nn.Modules, specific models are ComposerModel classes with methods to load safetensor weights
+    automatically (keep in a single separate file for each model)
 
 v0.2
 - DeepSpeed ZeRO
