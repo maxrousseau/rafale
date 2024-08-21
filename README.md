@@ -9,7 +9,7 @@
 
 <div class="logo">
 <p align="center">
-<img src="./lil-logo/rafale-logo.png" alt="rafale-logoi" width="100px" />
+<img src="./lil_logo/rafale-logo.png" alt="rafale-logo" width="100px" />
 <br>
 Rafale is (for now) a simple and opinionated transformer encoder training CLI.
 </p>
