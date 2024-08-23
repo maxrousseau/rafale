@@ -3,10 +3,12 @@ import yaml
 
 
 # generate datasetmodule/model given a ".py" file containing the setup code
-from datasets.data_utils import DatasetWrapper
-from models.model_utils import ModelWrapper
+# from datasets.data_utils import DatasetWrapper
+# from models.model_utils import ModelWrapper
+import datapipe
 
 parser = argparse.ArgumentParser(description="launch a training run")
+
 parser.add_argument(
     "-c", "--config", type=str, help="path to yaml configuration file", required=True
 )

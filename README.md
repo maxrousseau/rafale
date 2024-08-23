@@ -6,7 +6,7 @@
 <p align="center">
 <img src="./lil_logo/rafale-logo.png" alt="rafale-logo" width="200px" />
 <br>
-Rafale is (for now) a simple and opinionated transformer encoder training CLI.
+Rafale is (for now) a simple and opinionated transformer training CLI.
 </p>
 </div>
 
@@ -18,7 +18,7 @@ Rafale is (for now) a simple and opinionated transformer encoder training CLI.
 Attempting to balance ergonomics and simplicity. This is meant to be easily hackable for research purposes.
 
 ```
-torch, lightning-fabric (or) accelerate, datasets, rich (eyecandy) ~~tokenizers will be removed~~
+torch, lightning-fabric (or) accelerate (or) composer, datasets, rich (eyecandy) ~~tokenizers will be removed~~
 ```
 
 @TODO :: (check out this stream on HF accelerate)[https://www.youtube.com/watch?v=X-Jx5-YskKY]

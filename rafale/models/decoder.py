@@ -95,7 +95,6 @@ class DecoderAttentionRotary(nn.Module):
     - d attention head dimension D//H
     - F feedforward dimension
 
-
     """
 
     def __init__(self):
@@ -120,6 +119,22 @@ class DecoderAttentionRotary(nn.Module):
 
         return tensor.view(batch_size, -1, self.n_heads, self.head_dim).transpose(1, 2)
 
+    def _merge_heads(self, tensor: Tensor):
+        """
+        input tensor: [bs. num_attention_heads, seq_len, attn_head_size]
+        returns: [bs, seq_len, hidden_size]
+        """
+        # tensor [bs, num_attention_heads, seq_len, attn_head_size]
+        tensor = tensor.permute(0, 2, 1, 3).contiguous()
+        # -> [bs, seq_len, num_attention_heads, attn_head_size]
+        tensor = tensor.view(
+            tensor.size(0),
+            tensor.size(1),
+            self.num_attention_heads * self.attn_head_size,
+        )
+        # -> [bs, seq_len, hidden_size]
+        return tensor
+
     def forward(self, x_BLD, freq_cis, mask):
         # projection
         q_BLD, k_BLD, v_BLD = self.query_key_value(x_BLD).split(self.embed_dim, dim=-1)
@@ -136,30 +151,34 @@ class DecoderAttentionRotary(nn.Module):
         attn_out_BLHd = flex_attention(query, key, value, block_mask=mask)
 
         # @HERE!!
-        attn_out_BLD = attn_weights.reshape(
-            attn_weights.shape[0],
-            attn_weights.shape[1],
-            self.num_attention_heads * self.head_size,
-        )
+        attn_out_BLD = self._merge_heads(attn_out_BLHd)
+
+        return attn_out_BLD
 
 
 class DecoderFeedForward(nn.Module):
-    """ """
-
-    pass
-
-
-class DecoderAddNorm(nn.Module):
     """
-    set to either layernorm or rmsnorm
+    Tensor dimension names:
+    - B batch size
+    - L sequence length
+    - H number of attention heads
+    - D embedding dimension
+    - d attention head dimension D//H
+    - F feedforward dimension
+
     """
 
     def __init__(self):
         super().__init__()
+        self.ff_in = nn.Linear(config.embed_dim, config.ff_dim)
+        self.gelu = nn.GELU()
+        self.ff_out = nn.Linear(config.ff_dim, config.embed_dim)
 
-    def forward(self, x):
-        x
-        return x
+    def forward(self, x_BLD):
+        x_BLF = self.ff_in(x_BLD)
+        x_BLF = self.gelu(x_BLF)
+        out_BLD = self.ff_out(x_BLF)
+        return out_BLD
 
 
 class DecoderBlock(nn.Module):
@@ -167,12 +186,13 @@ class DecoderBlock(nn.Module):
 
     def __init__(self):
         super().__init__()
-        self.attention = DecoderAttention(config)
+        self.attention = DecoderAttentionRotary(config)
         self.feed_forward = DecoderFeedForward(config)
         self.ffn_norm = nn.LayerNorm(config.dim, config.norm_eps)
         self.attention_norm = nn.LayerNorm(config.dim, config.norm_eps)
 
     def forward(self, x, freq_cis, input_pos, mask):
+        # @NOTE :: this i different from BERT*** norm then add vs add then norm
         h = x + self.attention(self.attention_norm(x), freq_cis, input_pos, mask)
         out = h + self.feed_forward(self.ffn_norm(h))
         return out

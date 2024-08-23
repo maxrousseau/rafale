@@ -1,23 +1,17 @@
+[project]
+name = "rafale"
+version = "0.0.1"
+description = "opinionated transformer training cli"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["torch", "composer", "datasets"]
+packages = [{include = "rafale"}]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-[project]
-name = "rafale"
-version = "0.1"
-description = "simple transformer training lib"
-readme = "README.md"
-requires-python = ">=3.10"
-license = {text = "MIT"}
-
-[project.urls]
-homepage = "https://github.com/maxrousseau/rafale"
-
-#[project.authors]
-#name = [{name="Maxime Rousseau", email=""}]
-
-[tool.setuptools.packages.find]
-where = ["rafale"]
-
 [project.optional-dependencies]
-# Add any optional dependencies here, if applicable
+dev = [
+    "datasets"
+]

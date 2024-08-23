@@ -266,7 +266,7 @@ class AddNorm(nn.Module):
         self.dropout = nn.Dropout(dropout_p)
 
     def forward(self, x, residual):
-        x = self.dropout(x)
+        x = self.dropout(x)  # @TODO :: make sure this should be here...
         x = self.ln(x + residual)
 
         return x
@@ -275,10 +275,6 @@ class AddNorm(nn.Module):
 class EncoderBlock(nn.Module):
     def __init__(self, embed_dim, n_heads, ff_dim, eps=None, dropout_p=None):
         super().__init__()
-
-        # self.mha = MultiHeadAttention(
-        #     n_heads=n_heads, embed_dim=embed_dim, dropout_p=dropout_p
-        # )
 
         self.attention = AttentionModule(
             n_heads=n_heads, embed_dim=embed_dim, dropout_p=dropout_p
