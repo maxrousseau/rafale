@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 """
 to simplify model loading add a configuration for the pre-trained weight loading using safetensors instead of loading
 the full model.
@@ -8,7 +10,7 @@ the full model.
 @dataclass
 class BertConfig:
     embed_dim: int = 768
-    vocab_size: int = 30522  # could usage would be to 30522 + num_extra_tokens
+    vocab_size: int = 30522
     attention_dropout: float = 0.1
     hidden_dropout: float = 0.1
     num_heads: int = 12
@@ -18,7 +20,9 @@ class BertConfig:
     num_blocks: int = 12
     pad_token_id: int = 0
     num_token_type: int = 2
-    fast_attention: bool = False  # use xformers (todo: add FlashAttention2)
+    fast_attention: bool = (
+        False  # use xformers (todo: add FlashAttention2), NOT IMPLEMENTED*
+    )
 
 
 @dataclass
@@ -36,29 +40,31 @@ class RobertaConfig:
     num_token_type: int = 1
     bos_token_id: int = 0
     eos_token_id: int = 2
-    fast_attention: bool = False  # use xformers (todo: add FlashAttention2)
+    fast_attention: bool = False
 
 
 @dataclass
 class Pythia14MConfig:
     embed_dim: int = 128
-    vocab_size: int = 50304
-    attention_dropout: float = 0.1
-    hidden_dropout: float = 0.1
     num_heads: int = 4
     ff_dim: int = 512
+    hidden_act: str = "gelu"
     max_pos_embedding: int = 2048
+    vocab_size: int = 50304
+
+    attention_dropout: float = 0.1
+    hidden_dropout: float = 0.1
+
     layer_norm_eps: float = 1e-05
     num_blocks: int = 6
-    #     pad_token_id: int = 1
+    # pad_token_id: int = 1
 
     bos_token_id: int = 0
     eos_token_id: int = 0
     fast_attention: bool = False  # use xformers (todo: add FlashAttention2)
-    hidden_act: str = "gelu"
 
     rotary_emb_base: int = 10000  # @TODO read a breakdown of rotatry pos embeddings and figure out what this does
-    rotary_pct: float = 0.25
+    rotary_pct: float = 0.25  # what is this?...
 
     tie_word_embeddings: bool = False
 

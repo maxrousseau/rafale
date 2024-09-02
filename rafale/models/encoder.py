@@ -1,8 +1,7 @@
 from dataclasses import dataclass
+
 import torch
 import torch.nn.functional as F
-
-# import xformers.ops as xops
 
 from torch import nn
 from torch.nn.functional import scaled_dot_product_attention
@@ -67,31 +66,8 @@ class Embedding(nn.Module):
         return E
 
 
-class MultiHeadAttention(nn.Module):
-    def __init__(self, n_heads, embed_dim, dropout_p=0.1, fast_attn=False):
-        "uses xformers memory effeicient attention"
-        super().__init__()
-        self.dropout_p = dropout_p
-        self.fast_attn = fast_attn
-        assert embed_dim % n_heads == 0
-        # We assume d_v always equals d_k
-        self.head_dim = embed_dim // n_heads
-        self.n_heads = n_heads
-        self.embed_dim = embed_dim
-        self.all_head_size = n_heads * self.head_dim
-
-        # @TODO get linear projections
-        self.query = nn.Linear(embed_dim, embed_dim)
-        self.key = nn.Linear(embed_dim, embed_dim)
-        self.value = nn.Linear(embed_dim, embed_dim)
-
-        # output
-        self.out = nn.Linear(embed_dim, embed_dim)
-
-    def forward(self, q, k, v):
-        # @HERE TODO
-        """
-        so input q, k, v are essentially the same tensor since we're doing self attention but the idea here is that this
+"""
+    so input q, k, v are essentially the same tensor since we're doing self attention but the idea here is that this
         same implementation could be used for cross attention.
 
         in self-attention they have dimension [batch_size, sequence_length, embedding_dimension] so for bert that would
@@ -367,82 +343,6 @@ class EncoderWrapper(nn.Module):
 
         return x
 
-    def compute_decoupled_label_loss(self, logits, labels, permutations, tokenizer):
-        """ """
-        batch_size = logits.size(0)
-        F.softmax(logits, dim=-1)
-        letters = list(map(chr, range(97, 123)))
-
-        # Define the loss functions
-        # same used as adapet
-
-        nn.BCELoss(reduction="none")
-        nn.BCEWithLogitsLoss(reduction="none")
-
-        losses = []
-
-        for i in range(batch_size):
-            num_labels = permutations[i]
-            # get all the relevant ids (choices) from the sample
-            relevant_ids = tokenizer.convert_tokens_to_ids(letters[:num_labels])
-
-            # the token id of the positive label of the example
-            example_label = labels[i]
-            example_label_id = example_label[example_label != -100].item()
-
-            if len(relevant_ids) == 1:
-                # caveat if example only has one choice...
-                example_bad_ids = []
-            else:
-                relevant_ids.remove(example_label_id)
-                example_bad_ids = relevant_ids
-
-            # get the logit predictions from the mask token
-            l = logits[i]
-            # l = probabilities[i]
-            mask_token_logits = l[labels[i] != -100]
-            mask_token_logits = torch.flatten(mask_token_logits)
-
-            indices = [x for x in range(l.size(1)) if x not in relevant_ids]
-            non_choice_logits = torch.index_select(
-                mask_token_logits, 0, torch.tensor(indices)
-            )
-
-            # probability logits for the positive label
-            positive_prediction = mask_token_logits[example_label_id]
-
-            negative_losses = []
-            negative_label = torch.zeros([])
-            # probability logits for the negative labels
-            for idx in example_bad_ids:
-                # negative_predictions.append(mask_token_logits[idx])
-                negative_losses.append(
-                    self.bcel_loss(mask_token_logits[idx], negative_label)
-                )
-
-            nulltoken_labels = torch.zeros(len(indices))  # device="cuda:0"
-            positive_labels = torch.ones([])
-
-            # mean of bad labels bcel
-            nulltoken_label_loss = torch.mean(
-                self.bcel_loss(non_choice_logits, nulltoken_labels)
-            )
-            negative_label_loss = torch.sum(torch.stack(negative_losses))
-            positive_label_loss = self.bcel_loss(positive_prediction, positive_labels)
-
-            losses.append(
-                torch.sum(
-                    torch.stack(
-                        [
-                            positive_label_loss.view(1),
-                            nulltoken_label_loss.view(1),
-                            negative_label_loss.view(1),
-                        ]
-                    )
-                )
-            )
-        return torch.mean(torch.stack(losses))
-
     def compute_loss(self, logits, labels):
         """ """
         ce_loss = nn.CrossEntropyLoss(ignore_index=-100)
@@ -455,37 +355,3 @@ class EncoderWrapper(nn.Module):
 
         # Compute and return the loss
         return ce_loss(logits, labels)
-
-
-# DELETE THIS
-def get_tokens_from_logits(logits, tokenizer=None):
-    """
-    return the prediced tokens for all of the inputs
-    """
-    # Apply softmax to convert logits to probabilities
-    probabilities = F.softmax(logits, dim=-1)
-
-    # Get the predicted token IDs
-    predicted_token_ids = torch.argmax(probabilities, dim=-1)
-
-    predicted_tokens = [
-        tokenizer.convert_ids_to_tokens(seq.numpy())
-        for seq in torch.unbind(predicted_token_ids, dim=0)
-    ]
-    return predicted_tokens
-
-
-@dataclass
-class BertConfig:
-    embed_dim: int = 768
-    vocab_size: int = 30522  # could usage would be to 30522 + num_extra_tokens
-    attention_dropout: float = 0.1
-    hidden_dropout: float = 0.1
-    num_heads: int = 12
-    ff_dim: int = 3072
-    max_pos_embedding: int = 512
-    layer_norm_eps: float = 1e-12
-    num_blocks: int = 12
-    pad_token_id: int = 0
-    num_token_type: int = 2
-    fast_attention: bool = False  # use xformers (todo: add FlashAttention2)

@@ -1,86 +1,132 @@
 #!/usr/bin/env python
+from typing import Optional
 import torch
-from torch.nn.attention.flex_attention import flex_attention, create_block_mask
+
+from torch import nn
+from torch import Tensor
+
+# from torch.nn.attention.flex_attention import flex_attention, create_block_mask
+from torch.nn.functional import scaled_dot_product_attention
 
 ###############################################################################
 #                 simple implementation of GPT building blocks                #
 ###############################################################################
 
 
+class RoPE(nn.Module):
+    @classmethod
+    def precompute_freqs_cis(
+        cls,
+        seq_len: int,
+        n_elem: int,
+        base: int = 10000,
+        dtype: torch.dtype = torch.bfloat16,
+    ) -> Tensor:
+        """
+        Computes the cos and sin angles to be applied to the token vectors.
+
+        We begin by computing thetas (freqs) across each dimension pair (P=D/2) for the whole sequence length (L).
+        Then we convert this matrix of shape LP into complex numbers of the same shape.
+        Finally the real and imaginary parts of these complex numbers are stored in a stacked matrix and returned.
+
+        Args:
+            seq_len (int): sequence length of the input (use the maximum sequence length)
+            n_elem (int): hidden dimension of the model (D)
+            base (int): default 10000
+
+        Returns:
+            Tensor # of shape LP2
+        """
+        freqs = 1.0 / (
+            base ** (torch.arange(0, n_elem, 2)[: (n_elem // 2)].float() / n_elem)
+        )  # shape is D/2 or n_elem/2
+        t = torch.arange(seq_len, device=freqs.device)  # shape L
+        freqs = torch.outer(t, freqs)  # outer product yields matrix of shape LD/2
+        freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # shape LD/2
+        # torch.ones_like simply returns a tensor of ones with the same shape
+        # torch.polar creates a complex tensor whose elements are Cartesian coordinates corresponding to the polar
+        # coordinates with absolute value abs (ones_like) and angle angle (freqs).
+        cache = torch.stack([freqs_cis.real, freqs_cis.imag], dim=-1)
+        # stack the real and imaginary part of the complex tensor shape is L-D/2-2
+        return cache.to(dtype=dtype)
+
+    @classmethod
+    def apply_rotary_emb(cls, x: Tensor, freqs_cis: Tensor) -> Tensor:
+        """
+        Applies Rotary Position Embedding (RoPE) to the input tensor.
+
+        shapes:
+        B: batch size
+        N: number of heads
+        L: sequence length
+        d: head dimension
+        O: flat dimension (1)
+        P: paired dimension (d/2)
+
+
+        This function reshapes the input tensor `x` and the frequency tensor `freqs_cis`
+        to prepare them for the application of RoPE. For each pair of hidden dimensions
+        (m, n) in `x`, the following transformations are applied:
+
+            m' = m * real_part(freqs_cis) - n * imaginary_part(freqs_cis)
+            n' = n * real_part(freqs_cis) + m * imaginary_part(freqs_cis)
+
+        After applying the transformations, the tensor is reshaped back to its original shape.
+
+        Args:
+            x (Tensor): The input tensor of shape (..., 2 * hidden_dim), where the last dimension
+                        consists of pairs of (m, n) values.
+            freqs_cis (Tensor): The complex-valued frequency tensor of shape (..., 1, 2), where the
+                                last dimension contains (real_part, imaginary_part) values corresponding
+                                to each frequency.
+
+        Returns:
+            Tensor: The tensor after applying RoPE, with the same shape as the input tensor `x`.
+        """
+
+        x = x.transpose(1, 2)  # flip back the seq_len and num_heads
+        x_BLNP2 = x.float().reshape(*x.shape[:-1], -1, 2)
+
+        freqs_cis_1L1P2 = freqs_cis.view(1, x_BLNP2.size(1), 1, x_BLNP2.size(3), 2)
+
+        x_out2 = torch.stack(
+            [
+                x_BLNP2[..., 0] * freqs_cis_1L1P2[..., 0]
+                - x_BLNP2[..., 1] * freqs_cis_1L1P2[..., 1],
+                x_BLNP2[..., 1] * freqs_cis_1L1P2[..., 0]
+                + x_BLNP2[..., 0] * freqs_cis_1L1P2[..., 1],
+            ],
+            -1,
+        )
+
+        x_out2 = x_out2.flatten(3)
+        x_BNLd = x_out2.transpose(1, 2)
+
+        return x_BNLd.type_as(x)
+
+
 class DecoderEmbedding(nn.Module):
     """simply an input projection of the tokens here, since rotary position encodings are used, makes things simpler"""
 
-    def __init__(
-        self,
-        vocab_size=None,
-        hidden_size=None,
-        hidden_dropout_prob=None,
-    ):
+    def __init__(self, config):
         super().__init__()
         # nn.Embedding is just a lookup table,
         self.input_embeddings = nn.Embedding(
-            num_embeddings=vocab_size,
-            embedding_dim=hidden_size,
+            num_embeddings=config.vocab_size,
+            embedding_dim=config.embed_dim,
             # padding_idx=pad_token_id, # not specified for causal GPTNeoX... ? @TODO :: i think padding is handled by
             # the attention mask...
         )
-        self.dropout = nn.Dropout(hidden_dropout_prob)
+        self.dropout = nn.Dropout(config.hidden_dropout)
 
     def forward(self, x):
         x = self.input_embeddings(x)
         return self.dropout(x)
 
-        #        self.LayerNorm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) #* @NOTE :: interesting no layer norm in the
 
-
+#        self.LayerNorm = nn.LayerNorm(hidden_size, eps=layer_norm_eps) #* @NOTE :: interesting no layer norm in the
 #        pythia reference HF implementation, is this a thing for all causal decoders? Ans: since they use input
 #        layernorm and post attn layer norm this isn't necessary here
-
-
-class RotaryCache(nn.Module):
-    def __init__(self, dim, max_position_embeddings=2048, base=10000, device=None):
-        super().__init__()
-
-        self.dim = dim
-        self.max_position_embeddings = max_position_embeddings
-        self.base = base
-        inv_freq = 1.0 / (
-            self.base
-            ** (
-                torch.arange(0, self.dim, 2, dtype=torch.int64).float().to(device)
-                / self.dim
-            )
-        )
-        self.register_buffer("inv_freq", inv_freq, persistent=False)
-
-        # Build here to make `torch.jit.trace` work.
-        self._set_cos_sin_cache(
-            seq_len=max_position_embeddings,
-            device=self.inv_freq.device,
-            dtype=torch.get_default_dtype(),
-        )
-
-    def _set_cos_sin_cache(self, seq_len, device, dtype):
-        self.max_seq_len_cached = seq_len
-        t = torch.arange(
-            self.max_seq_len_cached, device=device, dtype=torch.int64
-        ).type_as(self.inv_freq)
-
-        freqs = torch.outer(t, self.inv_freq)
-        # Different from paper, but it uses a different permutation in order to obtain the same calculation
-        emb = torch.cat((freqs, freqs), dim=-1)
-        self.register_buffer("cos_cached", emb.cos(), persistent=False)
-        self.register_buffer("sin_cached", emb.sin(), persistent=False)
-
-    def forward(self, x, seq_len=None):
-        # x: [bs, num_attention_heads, seq_len, head_size]
-        if seq_len > self.max_seq_len_cached:
-            self._set_cos_sin_cache(seq_len=seq_len, device=x.device, dtype=x.dtype)
-
-        return (
-            self.cos_cached[:seq_len],
-            self.sin_cached[:seq_len],
-        )
 
 
 class DecoderAttentionRotary(nn.Module):
@@ -97,17 +143,18 @@ class DecoderAttentionRotary(nn.Module):
 
     """
 
-    def __init__(self):
+    def __init__(self, config):
         super().__init__()
 
-        self.head_dim = embed_dim // num_heads
-        self.num_heads = num_heads
+        self.head_dim = config.embed_dim // config.num_heads
+        self.num_heads = config.num_heads
         self.embed_dim = config.embed_dim
 
         # set bias to True or False (@TODO)
         self.query_key_value = nn.Linear(config.embed_dim, 3 * config.embed_dim)
         self.dense = nn.Linear(config.embed_dim, config.embed_dim)
         self.dropout = nn.Dropout(p=config.attention_dropout)
+        self.dropout_p = config.attention_dropout
 
     def _split_heads(self, tensor: Tensor):
         """
@@ -116,8 +163,11 @@ class DecoderAttentionRotary(nn.Module):
         # input tensor: [bs, seq_len, hidden_size]
         # returns: [bs, num_attention_heads, seq_len, attn_head_size]
         """
+        batch_size = tensor.size(0)
 
-        return tensor.view(batch_size, -1, self.n_heads, self.head_dim).transpose(1, 2)
+        return tensor.view(batch_size, -1, self.num_heads, self.head_dim).transpose(
+            1, 2
+        )
 
     def _merge_heads(self, tensor: Tensor):
         """
@@ -130,12 +180,19 @@ class DecoderAttentionRotary(nn.Module):
         tensor = tensor.view(
             tensor.size(0),
             tensor.size(1),
-            self.num_attention_heads * self.attn_head_size,
+            self.num_heads * self.head_dim,
         )
         # -> [bs, seq_len, hidden_size]
         return tensor
 
-    def forward(self, x_BLD, freq_cis, mask):
+    def forward(self, x_BLD, freqs_cis, mask):
+        seq_len = x_BLD.size(1)
+        assert freqs_cis is not None
+        # Slice the precomputed freqs_cis based on actual seq_len
+        print(seq_len)
+        print(freqs_cis)
+        sliced_freqs_cis = freqs_cis[:seq_len, :, :]
+
         # projection
         q_BLD, k_BLD, v_BLD = self.query_key_value(x_BLD).split(self.embed_dim, dim=-1)
 
@@ -144,13 +201,15 @@ class DecoderAttentionRotary(nn.Module):
         v_BHLd = self._split_heads(v_BLD)
 
         # apply rotary embeddings
-        q_BHLd = apply_rotary_emb(q_BHLd, freqs_cis)
-        k_BHLd = apply_rotary_emb(k_BHLd, freqs_cis)
+        q_BHLd = RoPE.apply_rotary_emb(q_BHLd, sliced_freqs_cis)
+        k_BHLd = RoPE.apply_rotary_emb(k_BHLd, sliced_freqs_cis)
 
         # compute attention
-        attn_out_BLHd = flex_attention(query, key, value, block_mask=mask)
+        # attn_out_BLHd = flex_attention(query, key, value, block_mask=mask)
+        attn_out_BLHd = scaled_dot_product_attention(
+            q_BHLd, k_BHLd, v_BHLd, is_causal=True, dropout_p=self.dropout_p
+        )
 
-        # @HERE!!
         attn_out_BLD = self._merge_heads(attn_out_BLHd)
 
         return attn_out_BLD
@@ -168,7 +227,7 @@ class DecoderFeedForward(nn.Module):
 
     """
 
-    def __init__(self):
+    def __init__(self, config):
         super().__init__()
         self.ff_in = nn.Linear(config.embed_dim, config.ff_dim)
         self.gelu = nn.GELU()
@@ -184,16 +243,17 @@ class DecoderFeedForward(nn.Module):
 class DecoderBlock(nn.Module):
     """ """
 
-    def __init__(self):
+    def __init__(self, config):
         super().__init__()
         self.attention = DecoderAttentionRotary(config)
         self.feed_forward = DecoderFeedForward(config)
-        self.ffn_norm = nn.LayerNorm(config.dim, config.norm_eps)
-        self.attention_norm = nn.LayerNorm(config.dim, config.norm_eps)
+        self.ffn_norm = nn.LayerNorm(config.embed_dim, config.layer_norm_eps)
+        self.attention_norm = nn.LayerNorm(config.embed_dim, config.layer_norm_eps)
 
-    def forward(self, x, freq_cis, input_pos, mask):
+    def forward(self, x, freqs_cis, mask):
         # @NOTE :: this i different from BERT*** norm then add vs add then norm
-        h = x + self.attention(self.attention_norm(x), freq_cis, input_pos, mask)
+        assert freqs_cis is not None
+        h = x + self.attention(self.attention_norm(x), freqs_cis, mask)
         out = h + self.feed_forward(self.ffn_norm(h))
         return out
 
@@ -206,152 +266,52 @@ class DecoderWrapper(nn.Module):
     def __init__(self, config):
         super().__init__()
         self.config = config
-
-        self.rotary_cache = RotaryCache(
-            config.embed_dim,
-            max_position_embeddings=config.max_pos_embedding,
-            base=config.rotary_emb_base,
-        )  # rm this
-
-        self.token_embeddings = DecoderEmbedding(
-            vocab_size=config.vocab_size,
-            hidden_size=config.embed_dim,
-            hidden_dropout_prob=config.hidden_dropout,
-        )
+        self.token_embeddings = DecoderEmbedding(config)
 
         self.layers = nn.ModuleList(
-            DecoderBlock(
-                hidden_size=config.embed_dim,
-                ffn_size=config.ff_dim,
-                attn_dropout=config.attention_dropout,
-                num_heads=config.num_heads,
-            )
-            for _ in range(config.num_blocks)
+            DecoderBlock(config) for _ in range(config.num_blocks)
         )
-        self.final_norm = nn.LayerNorm(config.dim, config.norm_eps)
-        self.output = nn.Linear(config.dim, config.vocab_size, bias=False)
+        self.final_norm = nn.LayerNorm(config.embed_dim, config.layer_norm_eps)
+        self.output = nn.Linear(config.embed_dim, config.vocab_size, bias=False)
 
         self.freqs_cis: Optional[Tensor] = None
-        self.mask_cache: Optional[Tensor] = None
+        self.causal_mask: Optional[Tensor] = None
+
         self.max_batch_size = -1
         self.max_seq_length = config.max_pos_embedding
 
-    def setup_caches(self, max_batch_size, max_length):
-        if (
-            self.max_seq_length >= max_seq_length
-            and self.max_batch_size >= max_batch_size
-        ):
-            return
-
-        head_dim = self.config.dim // self.config.n_head
-        max_seq_length = find_multiple(max_seq_length, 8)
-
-        self.max_seq_length = max_seq_length
-        self.max_batch_size = max_batch_size
-
+    def setup_caches(self):
+        head_dim = self.config.embed_dim // self.config.num_heads
         dtype = self.output.weight.dtype
 
-        self.freqs_cis = precompute_freqs_cis(
-            self.config.block_size,
-            self.config.embed_dim // self.config.num_heads,
-            self.config.rotary_emb_base,
-            dtype,
+        self.freqs_cis = RoPE.precompute_freqs_cis(
+            seq_len=self.config.max_pos_embedding,
+            n_elem=self.config.embed_dim // self.config.num_heads,
+            base=self.config.rotary_emb_base,
+            dtype=dtype,
         )
 
-        # self.causal_mask = torch.tril(
-        #     torch.ones(self.max_seq_length, self.max_seq_length, dtype=torch.bool)
-        # )
-        self.causal_mask = create_block_mask(
-            causal,
-            B=None,
-            H=None,
-            Q_LEN=self.max_seq_length,
-            KV_LEN=self.max_seq_length,
-        )  # batch and heads will be broadcast
+        # @TODO :: figure out why the nightly build thing...
+        # self.causal_mask = create_block_mask(
+        #     causal,
+        #     B=None,
+        #     H=None,
+        #     Q_LEN=self.max_seq_length,
+        #     KV_LEN=self.max_seq_length,
+        # )  # batch and heads will be broadcast
 
-    def forward(self, idx: Tensor, input_pos: Optional[Tensor] = None):
-        # @TODO :: what are the input pos doing here?...
-        assert self.freqs_cis is not None, "Caches must be initialized first"
-        mask = self.causal_mask[None, None, input_pos]  # we crop the excessive length?
-        freq_cis = self.freqs_cis[input_pos]
+    def forward(self, idx: Tensor):
+        # if self.freqs_cis is None or self.causal_mask is None:
+        if self.freqs_cis is None:
+            self.setup_caches()  # Caches must be initialized first
+
+        # mask = self.causal_mask[None, None, input_pos]  # we crop the excessive length?
+        mask = self.causal_mask  # @TODO :: fix this when we add flex attention!
+        freqs_cis = self.freqs_cis
 
         x = self.token_embeddings(idx)
         for i, layer in enumerate(self.layers):
-            x = layer(x, input_pos, freq_cis, mask)
+            x = layer(x, freqs_cis, mask)
         x = self.final_norm(x)
         logits = self.output(x)
         return logits
-
-
-# RoPE ###########################################################
-# simplest, from gpt-fast
-def find_multiple(n: int, k: int) -> int:
-    if n % k == 0:
-        return n
-    return n + k - (n % k)
-
-
-def precompute_freqs_cis(
-    seq_len: int, n_elem: int, base: int = 10000, dtype: torch.dtype = torch.bfloat16
-) -> Tensor:
-    freqs = 1.0 / (
-        base ** (torch.arange(0, n_elem, 2)[: (n_elem // 2)].float() / n_elem)
-    )
-    t = torch.arange(seq_len, device=freqs.device)
-    freqs = torch.outer(t, freqs)
-    freqs_cis = torch.polar(torch.ones_like(freqs), freqs)
-    cache = torch.stack([freqs_cis.real, freqs_cis.imag], dim=-1)
-    return cache.to(dtype=dtype)
-
-
-def apply_rotary_emb(x: Tensor, freqs_cis: Tensor) -> Tensor:
-    xshaped = x.float().reshape(*x.shape[:-1], -1, 2)
-    freqs_cis = freqs_cis.view(1, xshaped.size(1), 1, xshaped.size(3), 2)
-    x_out2 = torch.stack(
-        [
-            xshaped[..., 0] * freqs_cis[..., 0] - xshaped[..., 1] * freqs_cis[..., 1],
-            xshaped[..., 1] * freqs_cis[..., 0] + xshaped[..., 0] * freqs_cis[..., 1],
-        ],
-        -1,
-    )
-
-    x_out2 = x_out2.flatten(3)
-    return x_out2.type_as(x)
-
-
-# RoPE ###########################################################
-# source: https://github.com/huggingface/transformers/blob/main/src/transformers/models/gpt_neox/modeling_gpt_neox.py
-# @TODO :: read the RoPE paper and break it down to understand what is going on here...
-def rotate_half(x):
-    """Rotates half the hidden dims of the input."""
-    x1 = x[..., : x.shape[-1] // 2]
-    x2 = x[..., x.shape[-1] // 2 :]
-    return torch.cat((-x2, x1), dim=-1)
-
-
-def apply_rotary_pos_emb(q, k, cos, sin, position_ids, unsqueeze_dim=1):
-    """Applies Rotary Position Embedding to the query and key tensors.
-
-    Args:
-        q (`torch.Tensor`): The query tensor.
-        k (`torch.Tensor`): The key tensor.
-        cos (`torch.Tensor`): The cosine part of the rotary embedding.
-        sin (`torch.Tensor`): The sine part of the rotary embedding.
-        position_ids (`torch.Tensor`):
-            The position indices of the tokens corresponding to the query and key tensors. For example, this can be
-            used to pass offsetted position ids when working with a KV-cache.
-        unsqueeze_dim (`int`, *optional*, defaults to 1):
-            The 'unsqueeze_dim' argument specifies the dimension along which to unsqueeze cos[position_ids] and
-            sin[position_ids] so that they can be properly broadcasted to the dimensions of q and k. For example, note
-            that cos[position_ids] and sin[position_ids] have the shape [batch_size, seq_len, head_dim]. Then, if q and
-            k have the shape [batch_size, heads, seq_len, head_dim], then setting unsqueeze_dim=1 makes
-            cos[position_ids] and sin[position_ids] broadcastable to the shapes of q and k. Similarly, if q and k have
-            the shape [batch_size, seq_len, heads, head_dim], then set unsqueeze_dim=2.
-    Returns:
-        `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
-    """
-    cos = cos[position_ids].unsqueeze(unsqueeze_dim)
-    sin = sin[position_ids].unsqueeze(unsqueeze_dim)
-    q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
-    return q_embed, k_embed

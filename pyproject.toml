@@ -4,7 +4,11 @@ version = "0.0.1"
 description = "opinionated transformer training cli"
 readme = "README.md"
 requires-python = ">=3.12"
-dependencies = ["torch", "composer", "datasets"]
+dependencies = [
+    "composer==0.24.1",
+    "datasets",
+    "torch==2.4"
+]
 packages = [{include = "rafale"}]
 
 [build-system]
