@@ -55,6 +55,50 @@ def convert_bert_params_dict(target, source):
     return target
 
 
+def simple_del(source):
+    unused = ["rotary_emb.inv_freq", "masked_bias", "attention.bias"]
+    for k, v in list(source.items()):
+        if True in [x in k for x in unused]:
+            del source[k]
+
+
+def convert_pythia_params_dict(target, source):
+    """
+    source safetensors dict to our rafale model class.
+    """
+
+    # not needed for our implementation
+    unused = ["rotary_emb.inv_freq", "masked_bias", "attention.bias"]
+    for k, v in list(source.items()):
+        if True in [x in k for x in unused]:
+            del source[k]
+
+    conversion = [
+        ("gpt_neox.embed_in", "token_embeddings.input_embeddings"),
+        ("gpt_neox.layers", "layers"),
+        ("input_layernorm", "attention_norm"),
+        ("post_attention_layernorm", "ffn_norm"),
+        ("mlp", "feed_forward"),
+        ("dense_4h_to_h", "ff_out"),
+        ("dense_h_to_4h", "ff_in"),
+        ("embed_out", "output"),
+        ("gpt_neox.final_layer_norm", "final_norm"),
+    ]
+
+    updated_parameters = {}
+    for k, v in source.items():
+        for hf_term, my_term in conversion:
+            if hf_term in k:
+                k = k.replace(hf_term, my_term)
+
+        updated_parameters[k] = v
+
+    # here we transfer weights for all layers
+    target.load_state_dict(updated_parameters, strict=True)
+
+    return target
+
+
 def convert_roberta_params_dict(target, source):
     conversion = [
         ("roberta.embeddings", "embedding_layer"),
