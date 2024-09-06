@@ -13,14 +13,40 @@ from torch.nn.functional import scaled_dot_product_attention
 ###############################################################################
 
 
-class RoPE(nn.Module):
+# @BUG problem is here definetely...
+class NeoXRoPE(nn.Module):
+    """BROKEN!"""
+
+    @classmethod
+    def precompute_sin_cos_cache(cls, dim=None, seq_len=None, base=10000):
+        inv_freq = 1.0 / (
+            base ** (torch.arange(0, dim, 2, dtype=torch.int64).float() / dim)
+        )
+        t = torch.arange(seq_len, dtype=torch.int64).type_as(inv_freq)
+        freqs = torch.einsum("i,j->ij", t, inv_freq)
+        emb = torch.cat((freqs, freqs), dim=-1)
+        cos_cached = emb.cos()[:, None, None, :]
+        sin_cached = emb.sin()[:, None, None, :]
+        return cos_cached, sin_cached
+
+    # @torch.jit.script
+    @classmethod
+    def apply_rotary_pos_emb(cls, q, k, cos, sin):
+        def rotate_half(x):
+            x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
+            return torch.cat((-x2, x1), dim=x1.ndim - 1)
+
+        return (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
+
+
+class LlamaRoPE(nn.Module):
     @classmethod
     def precompute_freqs_cis(
         cls,
         seq_len: int,
         n_elem: int,
         base: int = 10000,
-        dtype: torch.dtype = torch.bfloat16,
+        dtype: torch.dtype = torch.float32,
     ) -> Tensor:
         """
         Computes the cos and sin angles to be applied to the token vectors.
@@ -84,24 +110,23 @@ class RoPE(nn.Module):
             Tensor: The tensor after applying RoPE, with the same shape as the input tensor `x`.
         """
 
-        x = x.transpose(1, 2)  # flip back the seq_len and num_heads
-        x_BLNP2 = x.float().reshape(*x.shape[:-1], -1, 2)
+        x = x.transpose(1, 2).contiguous()  # flip back the seq_len and num_heads
+        x_BLNP = x.float().reshape(*x.shape[:-1], -1, 2)
 
-        freqs_cis_1L1P2 = freqs_cis.view(1, x_BLNP2.size(1), 1, x_BLNP2.size(3), 2)
+        freqs_cis_1L1P2 = freqs_cis.view(1, x_BLNP.size(1), 1, x_BLNP.size(3), 2)
 
         x_out2 = torch.stack(
             [
-                x_BLNP2[..., 0] * freqs_cis_1L1P2[..., 0]
-                - x_BLNP2[..., 1] * freqs_cis_1L1P2[..., 1],
-                x_BLNP2[..., 1] * freqs_cis_1L1P2[..., 0]
-                + x_BLNP2[..., 0] * freqs_cis_1L1P2[..., 1],
+                x_BLNP[..., 0] * freqs_cis_1L1P2[..., 0]
+                - x_BLNP[..., 1] * freqs_cis_1L1P2[..., 1],
+                x_BLNP[..., 1] * freqs_cis_1L1P2[..., 0]
+                + x_BLNP[..., 0] * freqs_cis_1L1P2[..., 1],
             ],
             -1,
         )
 
         x_out2 = x_out2.flatten(3)
-        x_BNLd = x_out2.transpose(1, 2)
-
+        x_BNLd = x_out2.transpose(1, 2).contiguous()
         return x_BNLd.type_as(x)
 
 
@@ -165,8 +190,10 @@ class DecoderAttentionRotary(nn.Module):
         """
         batch_size = tensor.size(0)
 
-        return tensor.view(batch_size, -1, self.num_heads, self.head_dim).transpose(
-            1, 2
+        return (
+            tensor.view(batch_size, -1, self.num_heads, self.head_dim)
+            .transpose(1, 2)
+            .contiguous()
         )
 
     def _merge_heads(self, tensor: Tensor):
@@ -181,36 +208,72 @@ class DecoderAttentionRotary(nn.Module):
             tensor.size(0),
             tensor.size(1),
             self.num_heads * self.head_dim,
-        )
+        ).contiguous()
         # -> [bs, seq_len, hidden_size]
         return tensor
 
     def forward(self, x_BLD, freqs_cis, mask):
-        seq_len = x_BLD.size(1)
+        if not self.training:
+            self.dropout_p = 0
+        bsz, seq_len, _ = x_BLD.size()
         assert freqs_cis is not None
-        # Slice the precomputed freqs_cis based on actual seq_len
-        print(seq_len)
-        print(freqs_cis)
-        sliced_freqs_cis = freqs_cis[:seq_len, :, :]
+        # Slice the precomputed freqs_cis based on actual seq_len @NOTE LLAMA
+        # sliced_freqs_cis = freqs_cis[:seq_len, :, :]
 
         # projection
-        q_BLD, k_BLD, v_BLD = self.query_key_value(x_BLD).split(self.embed_dim, dim=-1)
+        # q_BLD, k_BLD, v_BLD = self.query_key_value(x_BLD).split(self.embed_dim, dim=-1)
+        qkv = self.query_key_value(x_BLD)
 
-        q_BHLd = self._split_heads(q_BLD)
-        k_BHLd = self._split_heads(k_BLD)
-        v_BHLd = self._split_heads(v_BLD)
+        # fixing shapes ###############################################################
+        # [batch, seq_len, (num_heads * 3 * head_size)]
+        #   --> [batch, seq_len, num_heads, 3 * head_size]
+        new_qkv_shape = qkv.size()[:-1] + (self.num_heads, 3 * self.head_dim)
+        qkv = qkv.view(*new_qkv_shape)
 
-        # apply rotary embeddings
-        q_BHLd = RoPE.apply_rotary_emb(q_BHLd, sliced_freqs_cis)
-        k_BHLd = RoPE.apply_rotary_emb(k_BHLd, sliced_freqs_cis)
+        # [batch, seq_len, num_attention_heads, 3 * head_size] --> 3 [batch, num_attention_heads, seq_len, head_size]
+        q_BHLd = qkv[..., : self.head_dim].permute(0, 2, 1, 3)
+        k_BHLd = qkv[..., self.head_dim : 2 * self.head_dim].permute(0, 2, 1, 3)
+        v_BHLd = qkv[..., 2 * self.head_dim :].permute(0, 2, 1, 3)
+        # .... ################################################################
+
+        # q_BHLd = self._split_heads(q_BLD)
+        # k_BHLd = self._split_heads(k_BLD)
+        # v_BHLd = self._split_heads(v_BLD)
+
+        cos = freqs_cis[0][:seq_len]  # expects shape LBHD
+        sin = freqs_cis[1][:seq_len]
+
+        q_LBHd = q_BHLd.permute(2, 0, 1, 3).contiguous()
+        k_LBHd = k_BHLd.permute(2, 0, 1, 3).contiguous()
+
+        q_LBHd, k_LBHd = NeoXRoPE.apply_rotary_pos_emb(q_LBHd, k_LBHd, cos, sin)
+
+        q_BHLd = q_LBHd.permute(1, 2, 0, 3).contiguous()
+        k_BHLd = k_LBHd.permute(1, 2, 0, 3).contiguous()
+
+        # apply rotary embeddings @NOTE LLAMA
+        # q_BHLd = RoPE.apply_rotary_emb(q_BHLd, sliced_freqs_cis)
+        # k_BHLd = RoPE.apply_rotary_emb(k_BHLd, sliced_freqs_cis)
+
+        print(q_BHLd.dtype)
+        print(v_BHLd.dtype)
 
         # compute attention
         # attn_out_BLHd = flex_attention(query, key, value, block_mask=mask)
-        attn_out_BLHd = scaled_dot_product_attention(
-            q_BHLd, k_BHLd, v_BHLd, is_causal=True, dropout_p=self.dropout_p
+        attn_out_BHLd = scaled_dot_product_attention(
+            q_BHLd,
+            k_BHLd,
+            v_BHLd,
+            # attn_mask=mask,
+            is_causal=True,
+            dropout_p=self.dropout_p,
         )
+        print(attn_out_BHLd.dtype)
+        print(f"dropout {self.dropout_p}")
 
-        attn_out_BLD = self._merge_heads(attn_out_BLHd)
+        attn_out_BLD = self._merge_heads(attn_out_BHLd)
+
+        attn_out_BLD = self.dense(attn_out_BLD)
 
         return attn_out_BLD
 
@@ -284,12 +347,26 @@ class DecoderWrapper(nn.Module):
         head_dim = self.config.embed_dim // self.config.num_heads
         dtype = self.output.weight.dtype
 
-        self.freqs_cis = RoPE.precompute_freqs_cis(
+        # self.freqs_cis = RoPE.precompute_freqs_cis(
+        #     seq_len=self.config.max_pos_embedding,
+        #     n_elem=self.config.embed_dim // self.config.num_heads,
+        #     base=self.config.rotary_emb_base,
+        #     dtype=dtype,
+        # )
+        self.cos, self.sin = NeoXRoPE.precompute_sin_cos_cache(
+            dim=self.config.embed_dim // self.config.num_heads,
             seq_len=self.config.max_pos_embedding,
-            n_elem=self.config.embed_dim // self.config.num_heads,
-            base=self.config.rotary_emb_base,
-            dtype=dtype,
         )
+
+        self.freqs_cis = (self.cos, self.sin)
+
+        self.causal_mask = torch.ones(
+            self.config.max_pos_embedding,
+            self.config.max_pos_embedding,
+            dtype=torch.bool,
+        )
+        self.causal_mask = torch.tril(self.causal_mask)
+        self.causal_mask = self.causal_mask.unsqueeze(0).unsqueeze(0)
 
         # @TODO :: figure out why the nightly build thing...
         # self.causal_mask = create_block_mask(
