@@ -51,7 +51,7 @@ rafale run -c config.yaml # set DEBUG=1 for a sanity check
 |:--------|:------------|:---------------|:--------------|
 | BERT    | ✅          |                |               |
 | RoBERTa | ✅          |                |               |
-| Pythia  |             |                |               |
+| Pythia  | ✅          | ✅             |               |
 | S4      |             |                |               |
 
 

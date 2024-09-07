@@ -13,7 +13,7 @@ from torch.nn.functional import scaled_dot_product_attention
 ###############################################################################
 
 
-# @BUG problem is here definetely...
+# @BUG problem is here definetely... STILL BROKEN
 class NeoXRoPE(nn.Module):
     """BROKEN!"""
 
@@ -25,13 +25,18 @@ class NeoXRoPE(nn.Module):
         t = torch.arange(seq_len, dtype=torch.int64).type_as(inv_freq)
         freqs = torch.einsum("i,j->ij", t, inv_freq)
         emb = torch.cat((freqs, freqs), dim=-1)
-        cos_cached = emb.cos()[:, None, None, :]
-        sin_cached = emb.sin()[:, None, None, :]
+        cos_cached = emb.cos()[None, None, :, :]
+        sin_cached = emb.sin()[None, None, :, :]
+
         return cos_cached, sin_cached
+
+    # caches are identical so it is probably the apply method which is causing the problem!
 
     # @torch.jit.script
     @classmethod
     def apply_rotary_pos_emb(cls, q, k, cos, sin):
+        """q shape BHLd"""
+
         def rotate_half(x):
             x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
             return torch.cat((-x2, x1), dim=x1.ndim - 1)
@@ -175,11 +180,15 @@ class DecoderAttentionRotary(nn.Module):
         self.num_heads = config.num_heads
         self.embed_dim = config.embed_dim
 
+        # ADD ROTARY PCT TO CONFIG !@TODO
+        self.rotary_ndims = int(self.head_dim * 0.25)
+
         # set bias to True or False (@TODO)
         self.query_key_value = nn.Linear(config.embed_dim, 3 * config.embed_dim)
         self.dense = nn.Linear(config.embed_dim, config.embed_dim)
         self.dropout = nn.Dropout(p=config.attention_dropout)
         self.dropout_p = config.attention_dropout
+        self.norm_factor = self.head_dim**-0.5
 
     def _split_heads(self, tensor: Tensor):
         """
@@ -216,6 +225,7 @@ class DecoderAttentionRotary(nn.Module):
         if not self.training:
             self.dropout_p = 0
         bsz, seq_len, _ = x_BLD.size()
+
         assert freqs_cis is not None
         # Slice the precomputed freqs_cis based on actual seq_len @NOTE LLAMA
         # sliced_freqs_cis = freqs_cis[:seq_len, :, :]
@@ -236,40 +246,32 @@ class DecoderAttentionRotary(nn.Module):
         v_BHLd = qkv[..., 2 * self.head_dim :].permute(0, 2, 1, 3)
         # .... ################################################################
 
-        # q_BHLd = self._split_heads(q_BLD)
-        # k_BHLd = self._split_heads(k_BLD)
-        # v_BHLd = self._split_heads(v_BLD)
+        # below, [1, 1, seq_len, hdim] - expects shape BHLd
+        cos = freqs_cis[0][:, :, :seq_len, :]
+        sin = freqs_cis[1][:, :, :seq_len, :]
 
-        cos = freqs_cis[0][:seq_len]  # expects shape LBHD
-        sin = freqs_cis[1][:seq_len]
+        q_rot = q_BHLd[..., : self.rotary_ndims]
+        q_pass = q_BHLd[..., self.rotary_ndims :]
+        k_rot = k_BHLd[..., : self.rotary_ndims]
+        k_pass = k_BHLd[..., self.rotary_ndims :]
 
-        q_LBHd = q_BHLd.permute(2, 0, 1, 3).contiguous()
-        k_LBHd = k_BHLd.permute(2, 0, 1, 3).contiguous()
+        q_rot, k_rot = NeoXRoPE.apply_rotary_pos_emb(q_rot, k_rot, cos, sin)
 
-        q_LBHd, k_LBHd = NeoXRoPE.apply_rotary_pos_emb(q_LBHd, k_LBHd, cos, sin)
+        q_BHLd = torch.cat((q_rot, q_pass), dim=-1)
+        k_BHLd = torch.cat((k_rot, k_pass), dim=-1)
 
-        q_BHLd = q_LBHd.permute(1, 2, 0, 3).contiguous()
-        k_BHLd = k_LBHd.permute(1, 2, 0, 3).contiguous()
-
-        # apply rotary embeddings @NOTE LLAMA
-        # q_BHLd = RoPE.apply_rotary_emb(q_BHLd, sliced_freqs_cis)
-        # k_BHLd = RoPE.apply_rotary_emb(k_BHLd, sliced_freqs_cis)
-
-        print(q_BHLd.dtype)
-        print(v_BHLd.dtype)
+        # print(f"my cos cache is shape: {cos.size()} and tensor:\n {cos}")
+        # print(f"my post_rope query, shape: {q_BHLd.size()}, tensor 0,1: {q_BHLd[0][1]}")
 
         # compute attention
-        # attn_out_BLHd = flex_attention(query, key, value, block_mask=mask)
         attn_out_BHLd = scaled_dot_product_attention(
             q_BHLd,
             k_BHLd,
             v_BHLd,
-            # attn_mask=mask,
             is_causal=True,
+            scale=self.norm_factor,
             dropout_p=self.dropout_p,
         )
-        print(attn_out_BHLd.dtype)
-        print(f"dropout {self.dropout_p}")
 
         attn_out_BLD = self._merge_heads(attn_out_BHLd)
 
@@ -313,11 +315,20 @@ class DecoderBlock(nn.Module):
         self.ffn_norm = nn.LayerNorm(config.embed_dim, config.layer_norm_eps)
         self.attention_norm = nn.LayerNorm(config.embed_dim, config.layer_norm_eps)
 
-    def forward(self, x, freqs_cis, mask):
+    def forward(self, x, freqs_cis, mask, parallel_residual=True, use_cache=True):
         # @NOTE :: this i different from BERT*** norm then add vs add then norm
         assert freqs_cis is not None
-        h = x + self.attention(self.attention_norm(x), freqs_cis, mask)
-        out = h + self.feed_forward(self.ffn_norm(h))
+        # @NOTE PYTHIA USES PARALLEL RESIDUAL STREAMS!!!
+        if parallel_residual:
+            out = (
+                x
+                + self.attention(self.attention_norm(x), freqs_cis, mask)
+                + self.feed_forward(self.ffn_norm(x))
+            )
+        else:
+            h = x + self.attention(self.attention_norm(x), freqs_cis, mask)
+            out = h + self.feed_forward(self.ffn_norm(h))
+
         return out
 
 
@@ -343,6 +354,8 @@ class DecoderWrapper(nn.Module):
         self.max_batch_size = -1
         self.max_seq_length = config.max_pos_embedding
 
+        self.rotary_pct = 0.25
+
     def setup_caches(self):
         head_dim = self.config.embed_dim // self.config.num_heads
         dtype = self.output.weight.dtype
@@ -353,8 +366,10 @@ class DecoderWrapper(nn.Module):
         #     base=self.config.rotary_emb_base,
         #     dtype=dtype,
         # )
+        head_size = self.config.embed_dim // self.config.num_heads
+        rotary_ndims = int(head_size * self.rotary_pct)
         self.cos, self.sin = NeoXRoPE.precompute_sin_cos_cache(
-            dim=self.config.embed_dim // self.config.num_heads,
+            dim=rotary_ndims,
             seq_len=self.config.max_pos_embedding,
         )
 
@@ -387,6 +402,7 @@ class DecoderWrapper(nn.Module):
         freqs_cis = self.freqs_cis
 
         x = self.token_embeddings(idx)
+
         for i, layer in enumerate(self.layers):
             x = layer(x, freqs_cis, mask)
         x = self.final_norm(x)
