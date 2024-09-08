@@ -7,8 +7,28 @@ from torch import nn
 from torch.nn.functional import scaled_dot_product_attention
 
 
+###############################################################################
+#                       SIMPLE BERT-like BUILDING BLOCKS                      #
+###############################################################################
+
+
+# @TODO :: Refactor, improve documentation and add tensor dimension keys for the names
+
+
 class Embedding(nn.Module):
-    """embeddings from word, absolute/fixe position (and token_type embedding?)"""
+    """Embeddings
+
+    In addition to the word embedding, BERT uses learned absolute position embeddings. We also have token type embedding for one the BERT pretraining
+    objectives.
+
+    Tensor dimension keys:
+    - B batch size
+    - L sequence length
+    - H number of attention heads
+    - D embedding dimension
+    - d attention head dimension D//H
+    - F feedforward dimension
+    """
 
     def __init__(
         self,
@@ -66,75 +86,19 @@ class Embedding(nn.Module):
         return E
 
 
-"""
-    so input q, k, v are essentially the same tensor since we're doing self attention but the idea here is that this
-        same implementation could be used for cross attention.
-
-        in self-attention they have dimension [batch_size, sequence_length, embedding_dimension] so for bert that would
-        be like [4, 512, 768] for example.
-
-        each attention head will handle part of the embedding dimensions (wow I didn't know that and don't fully
-        understand why...). So this is why we want to have embed_dim % n_head == 0.
-
-        (1) we use view to reshape the tensor into shape [batch_size, seq_length, n_head, head_embed] --> .view(batch_size,
-        -1, self.num_heads, self.head_dim)
-        (2) then we transpose seq_length and n_head to parrellalize the computations during the attention computations
-        --> .transpose(1, 2)
-
-
-        ## Summary of Shape Changes
-        Input: [batch_size, seq_length, embed_dim]
-        Post Linear Layer: [batch_size, seq_length, embed_dim] (same shape, but transformed)
-        View for Heads: [batch_size, seq_length, num_heads, head_dim]
-        Transpose for Heads: [batch_size, num_heads, seq_length, head_dim]
-
-        ## after having applied attention
-        We receive a tensor of shape [batch_size, num_heads, seq_length, head_dim] (same as before)
-        Now we want to get back to our original embedding and sequence shape so first we swap back num_head and
-        seq_length with --> .transpose(1,2)
-        Then we want to aggregate our head_dim to have our full embedding space back up together again with -->
-        .view(batch_size, -1, self.embed_dim)
-        and we get shape [batch_size, seq_length, embed_dim] at the end
-
-        """
-
-
-# @TODO: separate the attention modules to more easily inspect tensors
 class EncoderSelfAttention(nn.Module):
-    """just MHA with the various implementations
-    so input q, k, v are essentially the same tensor since we're doing self attention but the idea here is that this
-    same implementation could be used for cross attention.
+    """Bidirectional multi-head self attention.
 
-    in self-attention they have dimension [batch_size, sequence_length, embedding_dimension] so for bert that would
-    be like [4, 512, 768] for example.
-
-    each attention head will handle part of the embedding dimensions (wow I didn't know that and don't fully
-    understand why...). So this is why we want to have embed_dim % n_head == 0.
-
-    (1) we use view to reshape the tensor into shape [batch_size, seq_length, n_head, head_embed] --> .view(batch_size,
-    -1, self.num_heads, self.head_dim)
-    (2) then we transpose seq_length and n_head to parrellalize the computations during the attention computations
-    --> .transpose(1, 2)
-
-
-    ## Summary of Shape Changes
-    Input: [batch_size, seq_length, embed_dim]
-    Post Linear Layer: [batch_size, seq_length, embed_dim] (same shape, but transformed)
-    View for Heads: [batch_size, seq_length, num_heads, head_dim]
-    Transpose for Heads: [batch_size, num_heads, seq_length, head_dim]
-
-    ## after having applied attention
-    We receive a tensor of shape [batch_size, num_heads, seq_length, head_dim] (same as before)
-    Now we want to get back to our original embedding and sequence shape so first we swap back num_head and
-    seq_length with --> .transpose(1,2)
-    Then we want to aggregate our head_dim to have our full embedding space back up together again with -->
-    .view(batch_size, -1, self.embed_dim)
-    and we get shape [batch_size, seq_length, embed_dim] at the end
-
+    Tensor dimension keys:
+    - B batch size
+    - L sequence length
+    - H number of attention heads
+    - D embedding dimension
+    - d attention head dimension D//H
+    - F feedforward dimension
     """
 
     def __init__(self, n_heads, embed_dim, dropout_p=0.1, fast_attn=False):
-        "uses xformers memory effeicient attention"
         super().__init__()
         self.dropout_p = dropout_p
         self.fast_attn = fast_attn
@@ -152,7 +116,6 @@ class EncoderSelfAttention(nn.Module):
         self.value = nn.Linear(embed_dim, embed_dim)
 
     def forward(self, q, k, v):
-        # @HERE TODO
         """"""
         batch_size = q.size(0)
         if not self.training:
@@ -175,26 +138,14 @@ class EncoderSelfAttention(nn.Module):
             .transpose(1, 2)
         )
 
-        # https://pytorch.org/docs/stable/generated/torch.nn.functional.scaled_dot_product_attention.html#torch.nn.functional.scaled_dot_product_attention
-        # check for flash-attn-2? optional
-        if self.fast_attn:
-            raise Exception("fast attention not implemented yet")
-            # attn_output = xops.memory_efficient_attention(
-            #     q,
-            #     k,
-            #     v,
-            #     p=self.dropout_p,
-            # )
+        attn_output = scaled_dot_product_attention(
+            q,
+            k,
+            v,
+            dropout_p=self.dropout_p,
+        )
 
-        else:
-            attn_output = scaled_dot_product_attention(
-                q,
-                k,
-                v,
-                dropout_p=self.dropout_p,
-            )
-
-        # Concatenate heads and put through final linear layer
+        # concatenate heads and put through final linear layer
         attn_output = (
             attn_output.transpose(1, 2)
             .contiguous()

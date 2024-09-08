@@ -52,6 +52,8 @@ class Pythia14MConfig:
     max_pos_embedding: int = 2048
     vocab_size: int = 50304
 
+    parallel_residual: bool = True
+
     attention_dropout: float = 0.1
     hidden_dropout: float = 0.1
 
@@ -61,7 +63,7 @@ class Pythia14MConfig:
 
     bos_token_id: int = 0
     eos_token_id: int = 0
-    fast_attention: bool = False  # use xformers (todo: add FlashAttention2)
+    fast_attention: bool = False  # (todo: add FlashAttention2)
 
     rotary_emb_base: int = 10000  # @TODO read a breakdown of rotatry pos embeddings and figure out what this does
     rotary_pct: float = 0.25  # what is this?...

@@ -80,6 +80,14 @@ class DataPipeline:
 # then apply MLM loading to it for testing...
 
 
+class TinyStories(DataPipeline):
+    """ """
+
+    def __init__(self, args):
+        super().__init__()
+        "load the tinystories dataset"
+
+
 # datapipe is simple, you call the function and get the dataloader(s) you need for running
 # a debug_mode flag can be included (single batch)
 class WikiMLMPipe(DataPipeline):
@@ -125,5 +133,3 @@ dloaderz = wikipipe()
 next(iter(dloaderz["train"]))
 
 """
-
-# class WikiSLaMPipe(DataPipeline):
