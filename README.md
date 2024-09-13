@@ -18,10 +18,10 @@ Rafale is (for now) a simple and opinionated transformer training CLI.
 Attempting to balance ergonomics and simplicity. This is meant to be easily hackable for research purposes.
 
 ```
-torch, lightning-fabric (or) accelerate (or) composer, datasets, rich (eyecandy) ~~tokenizers will be removed~~
+torch, composer, datasets, tokenizers
 ```
 
-@TODO :: (check out this stream on HF accelerate)[https://www.youtube.com/watch?v=X-Jx5-YskKY]
+*lm-eval-harness* integration guide:  https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/interface.md#external-library-usage
 
 
 ## Purpose
@@ -59,17 +59,21 @@ rafale run -c config.yaml # set DEBUG=1 for a sanity check
 
 v0.1 - MVP
 - [ ] load weights from safetensors and include it in the config (BERT/RoBERTa and Pythia)
+  - [x] pythia
+  - [ ] BERT/RoBERTa
 - [ ] Pythia KV-cache implementation
-- [ ] integration with lighteval (or LM eval harness)
-- [ ] local dataloader
-- [ ] ```tests``` for pythia and bert models
+- [ ] integration with lm-eval-harness
+- [ ] datapipes for CLM and MLM
+  - local dataloader for now
+- [ ] ```tests``` for pythia and bert models on tinystories
 - [ ] ```main.py``` handles both training and evaluation (together or separately)
 - [-] BERT/RoBERTa support (MLM objective)
-  + [ ] move the testing in the notebook to a debug file in the modeling folder
-  + **layerwise decay** for fine-tuning (https://kozodoi.me/blog/20220329/discriminative-lr)
-  + optimizations : flash attn2, xformers layer_norm (triton) or RMSNorm, xformers fused_linear_layer
-  + RMSNorm
 - [ ] Mosaic Composer/Trainer (see lightning-fabric simple trainer example and start from there)
   + bf16/fp16, gradient clipping, and gradient accumulation
   + building blocks are nn.Modules, specific models are ComposerModel classes with methods to load safetensor weights
     automatically (keep in a single separate file for each model)
+
++ [ ] move the testing in the notebook to a debug file in the modeling folder
++ optimizations : flash attn2, xformers layer_norm (triton) or RMSNorm, xformers fused_linear_layer
++ RMSNorm
++ **layerwise decay** for fine-tuning (https://kozodoi.me/blog/20220329/discriminative-lr)
