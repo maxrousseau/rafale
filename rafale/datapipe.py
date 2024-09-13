@@ -31,9 +31,9 @@ class DataPipeline(ABC):
         self.tokenizer_name: str = kwargs["tokenizer_name"]
         self.is_prepared: bool = kwargs["is_prepared"]
         self.dataset_path: str = kwargs["dataset_path"]
-        self.save_dir: str = kwargs["save_dir"]
+        self.save_dir: str = os.path.expanduser(kwargs["save_dir"])
 
-        self.max_sequence_length: int = kwargs["dataset_path"]
+        self.max_sequence_length: int = kwargs["max_sequence_length"]
         self.batch_size: int = kwargs["batch_size"]
         self.pad_inputs: bool = kwargs["pad_inputs"]
         self.pad_token_id: int = kwargs["pad_token_id"]
@@ -46,7 +46,7 @@ class DataPipeline(ABC):
 
     def _load(self):
         try:
-            self.dataset = DatasetDict.load_from_disk(self.path)
+            self.dataset = DatasetDict.load_from_disk(self.dataset_path)
         except:
             raise OSError(f"Wrong dataset file and/or path configuration!{self.path}")
 
@@ -63,14 +63,16 @@ class DataPipeline(ABC):
 
         assert self.save_dir[-1] == "/"
 
-        save_path = os.path.join(self.save_dir, output_path)
+        save_path = os.path.abspath(os.path.join(self.save_dir, output_path))
+
+        print(save_path)
 
         if os.path.isdir(self.save_dir):
             pass
         else:
             os.makedirs(self.save_dir)
 
-        if os.path.exists(save_path):
+        if os.path.isdir(save_path):
             raise OSError(
                 f"Dataset already exists at location: {save_path}! \n ABORTING"
             )
@@ -81,13 +83,13 @@ class DataPipeline(ABC):
         # returns a or multiple dataloaders
         self._load()
 
-        dataloaders = {}
+        self.dataloaders = {}
 
         if not self.is_prepared:
             cache_dataset_path = self._check_path()
 
         if type(self.dataset) == DatasetDict:
-            for subset in self.dataset_pre:
+            for subset in self.dataset:
                 if subset == "train":
                     shuffle = self.shuffle_train
                 else:
@@ -95,22 +97,26 @@ class DataPipeline(ABC):
 
                 # if the data is not ready to be passed to the dataloader
                 if not self.is_prepared:
-                    self.dataset[subset] = self._prepare(self.dataset)
+                    print(f"preparing subset {subset}")
+                    self.dataset[subset] = self._prepare(self.dataset[subset])
 
-                dataloaders[subset] = DataLoader(
+                self.dataloaders[subset] = DataLoader(
                     self.dataset[subset],
                     collate_fn=self.data_collator,
                     batch_size=self.batch_size,
                 )
+                print(f"✅ Dataloader ready for subset {subset}.")
 
             if not self.is_prepared:
+                print(self.dataset)
                 self.dataset.save_to_disk(cache_dataset_path)
+                print(f"✅ Saved prepared dataset at {cache_dataset_path}.")
         else:
             raise TypeError(
                 f"self.dataset is type {type(self.dataset)}, but should be DatasetDict."
             )
 
-        return dataloaders
+        return self.dataloaders
 
 
 class CausalCollator:
@@ -128,6 +134,7 @@ class CausalCollator:
             input_ids = pad_sequence(
                 input_ids, batch_first=True, padding_value=self.pad_token_id
             )
+            print(input_ids)
 
         # Set the last token of each label sequence to pad_token_id to ignore loss for the last prediction
         # shift left the ids
@@ -136,13 +143,13 @@ class CausalCollator:
         ]
         labels = torch.stack(labels, dim=0)
 
-        # Convert input_ids to tensor if not padded yet
-        if not self.pad_inputs:
-            input_ids = torch.stack(input_ids, dim=0)
+        # # Convert input_ids to tensor if not padded yet
+        # if not self.pad_inputs:
+        #     input_ids = torch.stack(input_ids, dim=0)
 
-        # Stack the labels as well if padding was applied
-        if self.pad_inputs:
-            labels = torch.stack(labels, dim=0)
+        # # Stack the labels as well if padding was applied
+        # if self.pad_inputs:
+        #     labels = torch.stack(labels, dim=0)
 
         # Return the dictionary in the format used for training
         return {
@@ -151,17 +158,34 @@ class CausalCollator:
         }
 
 
-# 1) [x] tokenize
-# 2) [x] concat and split w/ block size (pad w/ collator)
-# 3) [x] save to disk {source}_{tokname}_bs{int}_len{int}
-# 3) [x] data_collator: *next* pad (if desired), label shift right and return torch tensor # HF: does this in the model...
-# 4) [ ] test with model training...
-
-
 class TinyStoriesCausalNeoX(DataPipeline):
     """This is sample datapipelin for the TinyStories dataset.
 
+
     This dataset is prepared for causal language modelling using the gpt neox tokenizer (eleutherai). We
+
+    Usage:
+        ts_dict = {
+            "name": "tinystories_testing",
+            "tokenizer_name": "neox",
+            "is_prepared": False,
+            "input_id_key": "input_ids",
+            "save_dir": "~/code/data/rafale_cache/",
+            "batch_size": 16,
+            "shuffle_train": False,
+            "dataset_path": "~/code/data/micro_tinystories",
+            "tokenizer_path": "EleutherAI/pythia-14m",
+            "max_sequence_length": 128,
+            "pad_token_id": -100,
+            "pad_inputs": True,
+            "is_prepared": False,
+        }
+        ts_dpipe = TinyStoriesCausalNeoX(**ts_dict)
+        dataloaders = ts_causal()
+
+    Args:
+
+    Returns:
 
     """
 
@@ -205,7 +229,7 @@ class TinyStoriesCausalNeoX(DataPipeline):
         return result
 
     def _prepare(self, data):
-        """big method here"""
+        """"""
 
         # apply functions above to dataset
         self.tokenizer = self._tokenizer_templating(self.tokenizer)
@@ -222,30 +246,18 @@ class TinyStoriesCausalNeoX(DataPipeline):
             batched=True,
         )
 
-    # ts_1k = ts_1k.map(
-    #     lambda example: tokenize(example, neox_tokenizer), remove_columns=ts_1k.column_names
-    # )
-
-    # lm_ = ts_mini_tokenized.map(lambda example: group_and_chunk(example, block_size=128), batched=True)
-    # ccollator = CausalCollator(pad_token_id=-100, input_id_key="input_ids", pad_inputs=False)
-    # mini_dl = DataLoader(lm_, collate_fn=ccollator, batch_size=4, shuffle=False)
-
-    # def __call__():
-    #     None
-
-
-ts_dict = {
-    batch_size: 16,
-    shuffle_train: False,
-    dataset_path: "~/code/data/tinystories",
-    tokenizer_path: "EleutherAI/pythia-14m",
-    max_sequence_length: 128,
-    pad_inputs: True,
-    is_prepared: False,
-}
+        return data
 
 
 # datapipe is simple, you call the function and get the dataloader(s) you need for running
 # a debug_mode flag can be included (single batch)
+
+
+# 1) [x] tokenize
+# 2) [x] concat and split w/ block size (pad w/ collator)
+# 3) [x] save to disk {source}_{tokname}_bs{int}_len{int}
+# 3) [x] data_collator: *next* pad (if desired), label shift right and return torch tensor # HF: does this in the model...
+# 4) [ ] test with model training...
+
 
 # @TODO :: tiny stories but for MLM also...
