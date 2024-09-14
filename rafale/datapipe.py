@@ -1,12 +1,17 @@
 import os
+import warnings
 from abc import ABC, abstractmethod
 
 from datasets import load_dataset, DatasetDict
 
 from tokenizers import Tokenizer
+from tokenizers.processors import TemplateProcessing
 
+import torch
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
+
+from rafale.caches import DATA_CACHE_DIR
 
 
 class DataPipeline(ABC):
@@ -31,7 +36,6 @@ class DataPipeline(ABC):
         self.tokenizer_name: str = kwargs["tokenizer_name"]
         self.is_prepared: bool = kwargs["is_prepared"]
         self.dataset_path: str = kwargs["dataset_path"]
-        self.save_dir: str = os.path.expanduser(kwargs["save_dir"])
 
         self.max_sequence_length: int = kwargs["max_sequence_length"]
         self.batch_size: int = kwargs["batch_size"]
@@ -43,6 +47,8 @@ class DataPipeline(ABC):
         self.tokenizer = Tokenizer.from_pretrained(kwargs["tokenizer_path"])
 
         self.data_collator = None
+
+        self.use_cached = False
 
     def _load(self):
         try:
@@ -61,21 +67,22 @@ class DataPipeline(ABC):
         """make sure that the dataset has not already been parsed at location"""
         output_path = f"{self.name}_{self.tokenizer_name}_bs{self.batch_size}_len{self.max_sequence_length}"
 
-        assert self.save_dir[-1] == "/"
+        assert DATA_CACHE_DIR[-1] == "/"
 
-        save_path = os.path.abspath(os.path.join(self.save_dir, output_path))
+        save_path = os.path.abspath(os.path.join(DATA_CACHE_DIR, output_path))
 
-        print(save_path)
-
-        if os.path.isdir(self.save_dir):
+        if os.path.isdir(DATA_CACHE_DIR):
             pass
         else:
-            os.makedirs(self.save_dir)
+            os.makedirs(DATA_CACHE_DIR)
 
         if os.path.isdir(save_path):
-            raise OSError(
-                f"Dataset already exists at location: {save_path}! \n ABORTING"
+            warnings.warn(
+                f"Dataset already exists at location:\n\t {save_path} \n ABORTING PREPARATION, USING CbACHED DATASET!"
             )
+
+            self.is_prepared = True
+            self.use_cached = True
 
         return save_path
 
@@ -99,6 +106,9 @@ class DataPipeline(ABC):
                 if not self.is_prepared:
                     print(f"preparing subset {subset}")
                     self.dataset[subset] = self._prepare(self.dataset[subset])
+
+                if self.use_cached:
+                    self.dataset = DatasetDict.load_from_disk(cache_dataset_path)
 
                 self.dataloaders[subset] = DataLoader(
                     self.dataset[subset],
@@ -134,7 +144,6 @@ class CausalCollator:
             input_ids = pad_sequence(
                 input_ids, batch_first=True, padding_value=self.pad_token_id
             )
-            print(input_ids)
 
         # Set the last token of each label sequence to pad_token_id to ignore loss for the last prediction
         # shift left the ids
@@ -170,7 +179,6 @@ class TinyStoriesCausalNeoX(DataPipeline):
             "tokenizer_name": "neox",
             "is_prepared": False,
             "input_id_key": "input_ids",
-            "save_dir": "~/code/data/rafale_cache/",
             "batch_size": 16,
             "shuffle_train": False,
             "dataset_path": "~/code/data/micro_tinystories",
@@ -247,17 +255,3 @@ class TinyStoriesCausalNeoX(DataPipeline):
         )
 
         return data
-
-
-# datapipe is simple, you call the function and get the dataloader(s) you need for running
-# a debug_mode flag can be included (single batch)
-
-
-# 1) [x] tokenize
-# 2) [x] concat and split w/ block size (pad w/ collator)
-# 3) [x] save to disk {source}_{tokname}_bs{int}_len{int}
-# 3) [x] data_collator: *next* pad (if desired), label shift right and return torch tensor # HF: does this in the model...
-# 4) [ ] test with model training...
-
-
-# @TODO :: tiny stories but for MLM also...

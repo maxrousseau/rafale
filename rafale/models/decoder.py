@@ -5,7 +5,11 @@ import torch
 from torch import nn
 from torch import Tensor
 
+import torch.nn.functional as F
+
 from torch.nn.functional import scaled_dot_product_attention
+
+from composer.models import ComposerModel
 
 ###############################################################################
 #                 simple implementation of GPT building blocks                #
@@ -50,7 +54,6 @@ class NeoXRoPE(nn.Module):
 
         return cos_cached, sin_cached
 
-    @torch.jit.script
     @classmethod
     def apply_rotary_pos_emb(cls, q_BHLR, k_BHLR, cos, sin):
         """Applies the rotation to the input queries and key features."""
@@ -261,7 +264,7 @@ class DecoderBlock(nn.Module):
         return out_BLD
 
 
-class DecoderWrapper(nn.Module):
+class DecoderWrapper(ComposerModel):
     """Full model wrapper for causal language modelling."""
 
     def __init__(self, config):
@@ -282,6 +285,10 @@ class DecoderWrapper(nn.Module):
         self.max_seq_length = config.max_pos_embedding
 
         self.rotary_pct = 0.25
+
+        self.vocab_size = config.vocab_size
+
+        self.ce_loss = nn.CrossEntropyLoss()
 
     def setup_caches(self):
         head_dim = self.config.embed_dim // self.config.num_heads
@@ -304,7 +311,7 @@ class DecoderWrapper(nn.Module):
         self.causal_mask = torch.tril(self.causal_mask)
         self.causal_mask = self.causal_mask.unsqueeze(0).unsqueeze(0)
 
-    def forward(self, idx: Tensor):
+    def forward(self, batch: Tensor):
         # if self.freqs_cis is None or self.causal_mask is None:
         if self.freqs_cis is None:
             self.setup_caches()  # Caches must be initialized first
@@ -312,10 +319,18 @@ class DecoderWrapper(nn.Module):
         mask = self.causal_mask  # not actually used for now...
         freqs_cis = self.freqs_cis
 
+        idx = batch["input_ids"]
+
         x = self.token_embeddings(idx)
 
         for i, layer in enumerate(self.layers):
             x = layer(x, freqs_cis, mask)
         x = self.final_norm(x)
         logits = self.output(x)
+
         return logits
+
+    def loss(self, outputs, batch):
+        targets = batch["labels"]
+
+        return self.ce_loss(outputs.view(-1, self.vocab_size), targets.view(-1))

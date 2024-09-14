@@ -55,16 +55,9 @@ def convert_bert_params_dict(target, source):
     return target
 
 
-def simple_del(source):
-    unused = ["rotary_emb.inv_freq", "masked_bias", "attention.bias"]
-    for k, v in list(source.items()):
-        if True in [x in k for x in unused]:
-            del source[k]
-
-
 def convert_pythia_params_dict(target, source):
     """
-    source safetensors dict to our rafale model class.
+    Source safetensors dict to our rafale model class.
     """
 
     # not needed for our implementation

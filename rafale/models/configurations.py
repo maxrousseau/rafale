@@ -1,10 +1,71 @@
+import requests
+import os
+
 from dataclasses import dataclass
+
+from safetensors import safe_open
+
+from ..caches import MODEL_CACHE_DIR
 
 """
 to simplify model loading add a configuration for the pre-trained weight loading using safetensors instead of loading
 the full model.
 > then save to a folder named ".pretrained/" in this directory
 """
+
+
+def download_file(url, save_path):
+    """
+    Downloads a file from the specified URL to the given save path.
+
+    :param url: The URL of the file to download.
+    :param save_path: The local path where the file will be saved.
+    """
+    try:
+        # Make sure the directory exists
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+        with requests.get(url, stream=True) as response:
+            response.raise_for_status()  # Check for HTTP errors
+            total_size = int(response.headers.get("content-length", 0))
+            block_size = 1024  # 1 Kilobyte
+            progress = 0
+
+            with open(save_path, "wb") as file:
+                for data in response.iter_content(block_size):
+                    file.write(data)
+                    progress += len(data)
+                    print(
+                        f"Downloaded {progress} of {total_size} bytes ({(progress/total_size)*100:.2f}%)",
+                        end="\r",
+                    )
+
+        print(f"\nDownload completed successfully! File saved to: {save_path}")
+
+    except requests.exceptions.HTTPError as http_err:
+        print(f"HTTP error occurred: {http_err}")  # HTTP error
+    except Exception as err:
+        print(f"An error occurred: {err}")  # Other errors
+
+
+def load_safetensors(rafale_model, model_config):
+    """Transfer the pretrained safetensors to rafale model"""
+    tensors = {}
+
+    safetensors_path = os.path.join(MODEL_CACHE_DIR, model_config.name + ".safetensors")
+
+    if os.path.isfile(safetensors_path):
+        pass
+    else:
+        download_file(model_config.safetensors_url, safetensors_path)
+
+    with safe_open(safetensors_path, framework="pt") as f:
+        for k in f.keys():
+            tensors[k] = f.get_tensor(k)
+
+    rafale_model = model_config.convert_params_dict(rafale_model, tensors)
+
+    return rafale_model
 
 
 @dataclass
@@ -45,6 +106,11 @@ class RobertaConfig:
 
 @dataclass
 class Pythia14MConfig:
+    name: str = "pythia14m"
+    safetensors_url: str = (
+        "https://huggingface.co/EleutherAI/pythia-14m/resolve/main/model.safetensors"
+    )
+
     embed_dim: int = 128
     num_heads: int = 4
     ff_dim: int = 512
@@ -59,43 +125,49 @@ class Pythia14MConfig:
 
     layer_norm_eps: float = 1e-05
     num_blocks: int = 6
-    # pad_token_id: int = 1
+    # pad_token_id: int = -100
 
     bos_token_id: int = 0
     eos_token_id: int = 0
-    fast_attention: bool = False  # (todo: add FlashAttention2)
+    fast_attention: bool = False
 
-    rotary_emb_base: int = 10000  # @TODO read a breakdown of rotatry pos embeddings and figure out what this does
-    rotary_pct: float = 0.25  # what is this?...
+    rotary_emb_base: int = 10000
+    rotary_pct: float = 0.25
 
     tie_word_embeddings: bool = False
 
+    @classmethod
+    def convert_params_dict(cls, target, source):
+        """
+        Source safetensors dict to our rafale model class.
+        """
+        # not needed for our implementation
+        unused = ["rotary_emb.inv_freq", "masked_bias", "attention.bias"]
+        for k, v in list(source.items()):
+            if True in [x in k for x in unused]:
+                del source[k]
 
-# @TODO :: delete below when we tested the config
-# {
-#   "architectures": [
-#     "GPTNeoXForCausalLM"
-#   ],
-#   "bos_token_id": 0,
-#   "classifier_dropout": 0.1,
-#   "eos_token_id": 0,
-#   "hidden_act": "gelu",
-#   "hidden_size": 128,
-#   "initializer_range": 0.02,
-#   "intermediate_size": 512,
-#   "layer_norm_eps": 1e-05,
-#   "max_position_embeddings": 2048,
-#   "model_type": "gpt_neox",
-#   "num_attention_heads": 4,
-#   "num_hidden_layers": 6,
-#   "rotary_emb_base": 10000,
-#   "rotary_pct": 0.25,
-#   "tie_word_embeddings": false,
-#   "torch_dtype": "float16",
-#   "transformers_version": "4.29.2",
-#   "use_cache": true,
-#   "use_parallel_residual": true,
-#   "vocab_size": 50304
-# }
-#
-#
+        conversion = [
+            ("gpt_neox.embed_in", "token_embeddings.input_embeddings"),
+            ("gpt_neox.layers", "layers"),
+            ("input_layernorm", "attention_norm"),
+            ("post_attention_layernorm", "ffn_norm"),
+            ("mlp", "feed_forward"),
+            ("dense_4h_to_h", "ff_out"),
+            ("dense_h_to_4h", "ff_in"),
+            ("embed_out", "output"),
+            ("gpt_neox.final_layer_norm", "final_norm"),
+        ]
+
+        updated_parameters = {}
+        for k, v in source.items():
+            for hf_term, my_term in conversion:
+                if hf_term in k:
+                    k = k.replace(hf_term, my_term)
+
+            updated_parameters[k] = v
+
+        # here we transfer weights for all layers
+        target.load_state_dict(updated_parameters, strict=True)
+
+        return target

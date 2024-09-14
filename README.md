@@ -58,10 +58,11 @@ rafale run -c config.yaml # set DEBUG=1 for a sanity check
 ## Roadmap
 
 v0.1 - MVP
+- [ ] single entrypoint CLI
 - [ ] load weights from safetensors and include it in the config (BERT/RoBERTa and Pythia)
   - [x] pythia
-  - [ ] BERT/RoBERTa
-- [ ] Pythia KV-cache implementation
+  - [ ] BERT/RoBERTa (need to move from HF to safetensors)
+- [ ] Pythia KV-cache implementation + greedy generation
 - [ ] integration with lm-eval-harness
 - [ ] datapipes for CLM and MLM
   - local dataloader for now
@@ -77,3 +78,16 @@ v0.1 - MVP
 + optimizations : flash attn2, xformers layer_norm (triton) or RMSNorm, xformers fused_linear_layer
 + RMSNorm
 + **layerwise decay** for fine-tuning (https://kozodoi.me/blog/20220329/discriminative-lr)
+
+
+
+```
+1) [x] tokenize
+2) [x] concat and split w/ block size (pad w/ collator)
+3) [x] save to disk {source}_{tokname}_bs{int}_len{int}
+3) [x] data_collator: *next* pad (if desired), label shift right and return torch tensor # HF: does this in the model...
+4) [ ] test with model training...
+
+
+@TODO :: tiny stories but for MLM also...
+```
