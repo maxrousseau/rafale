@@ -152,19 +152,35 @@ class CausalCollator:
         ]
         labels = torch.stack(labels, dim=0)
 
-        # # Convert input_ids to tensor if not padded yet
-        # if not self.pad_inputs:
-        #     input_ids = torch.stack(input_ids, dim=0)
-
-        # # Stack the labels as well if padding was applied
-        # if self.pad_inputs:
-        #     labels = torch.stack(labels, dim=0)
-
-        # Return the dictionary in the format used for training
         return {
             "input_ids": input_ids,
             "labels": labels,
         }
+
+
+class MLMCollator:
+    def __init__(
+        self,
+        mask_p: float = 0.15,
+        whole_word_mask: bool = False,
+        mask_span: bool = False,
+        pad_token_id: int = -100,
+        input_id_key: str = "input_ids",
+        pad_inputs: bool = True,
+    ):
+        """masks some % of tokens for MLM objective"""
+        pass
+
+
+class DefaultCollator:
+    def __init__(
+        self,
+        pad_token_id: int = -100,
+        input_id_key: str = "input_ids",
+        pad_inputs: bool = True,
+    ):
+        """for task data where labels are already set"""
+        pass
 
 
 class TinyStoriesCausalNeoX(DataPipeline):
@@ -255,3 +271,105 @@ class TinyStoriesCausalNeoX(DataPipeline):
         )
 
         return data
+
+
+class TinyStoriesMLM(DataPipeline):
+    """ """
+
+    pass
+
+
+class ImdbCLS(DataPipeline):
+    pass
+
+
+'''
+class ImdbClsPipe(DataPipeline):
+    """A pipeline for the imdb dataset for """
+
+    def __init__(self, **kwargs):
+        self.path = kwargs["path"]
+        self.name = kwargs["name"] # name
+        self.is_tokenized = kwargs["is_tokenized"]
+
+        self.padding = kwargs["padding"]  # "max_length"
+        self.max_sequence_length = kwargs["max_sequence_length"]  # 512
+
+        self.shuffle_train = kwargs["shuffle_train"] # False
+        self.batch_size = kwargs["batch_size"]
+        self.tokenizer = kwargs["tokenizer"]
+        self.collator_fn = DataCollatorWithPadding(
+            tokenizer=self.tokenizer,
+            padding=self.padding,
+            max_length=self.max_sequence_length,
+            return_tensors='pt'
+        )
+
+        self.data = datasets.DatasetDict.load_from_disk(self.path)
+
+    def _post_tokenize(self, dataset):
+        return dataset.remove_columns(["text"])
+
+    def _tokenize(
+        self,
+        examples,
+    ):
+        source_tokenized = self.tokenizer(
+            examples["text"],
+            truncation=True,
+            max_length=self.max_sequence_length,
+            return_token_type_ids=True,
+            return_tensors='pt'
+        )
+
+        batch = {k: v for k, v in source_tokenized.items()}
+
+        return batch
+
+    def _map_tokenize(self, subsets=None):
+        # tokenize
+        print("tokenizing training")
+        self.data["train"] = self.data["train"].map(self._tokenize, batched=True)
+        self.data["train"] = self.data["train"].remove_columns("text")
+
+        print("tokenizing test")
+        self.data["test"] = self.data["test"].map(self._tokenize, batched=True)
+        self.data["test"] = self.data["test"].remove_columns("text")
+
+
+    def _save_tokenized(self):
+        # preprocess
+        self.path += "_tokenized"
+        print(f"saving tokenized data to disk at location : {self.path}")
+        assert os.path.isdir(self.path) == False
+        self.data.save_to_disk(self.path)
+
+    def string_to_tokens(self, input_str):
+        # tokenize
+        tensor = self._tokenize({"text": input_str})
+
+        return self.collator_fn(tensor)
+
+    def __call__(self, subsets = ["train", "test"]):
+        dataloaders = {}
+
+        if self.is_tokenized:
+            print("data tokenized")
+        else:
+            self._map_tokenize()
+            self._save_tokenized()
+
+        for _set in subsets:
+            if _set == "train":
+                shuffle = self.shuffle_train
+            else:
+                shuffle = False
+
+            dataloaders[_set] = DataLoader(
+                        self.data[_set],
+                        collate_fn=self.collator_fn,  # DEBUG
+                        batch_size=self.batch_size,
+                        shuffle=shuffle,  # DEBUG
+                    )
+        return dataloaders
+'''

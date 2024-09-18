@@ -86,7 +86,7 @@ def main():
     data_pipeline = data_pipeline_dict[data_pipeline_key](**dataset_config)
     dataloaders = data_pipeline()
 
-    # setup logging?
+    # setup logging
     logger_for_baseline = InMemoryLogger()
 
     # build trainer

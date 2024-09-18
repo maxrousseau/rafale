@@ -16,6 +16,10 @@ from composer.models import ComposerModel
 ###############################################################################
 
 
+# @TODO kv cache implementation
+# modify: model class, layer class, attention class, Rope class
+
+
 class NeoXRoPE(nn.Module):
     @classmethod
     def precompute_sin_cos_cache(cls, dim=None, seq_len=None, base=10000):
@@ -65,6 +69,15 @@ class NeoXRoPE(nn.Module):
         return (q_BHLR * cos) + (rotate_half(q_BHLR) * sin), (k_BHLR * cos) + (
             rotate_half(k_BHLR) * sin
         )
+
+    # @TODO below not validated...
+    @classmethod
+    def apply_rotary_pos_emb_offset(cls, q, k, cos, sin, offset: int = 0):
+        cos, sin = (
+            cos[offset : q.shape[0] + offset, ...],
+            sin[offset : q.shape[0] + offset, ...],
+        )
+        return (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
 
 
 class DecoderEmbedding(nn.Module):
@@ -202,6 +215,52 @@ class DecoderAttentionRotary(nn.Module):
         attn_out_BLD = self.dense(attn_out_BLD)
 
         return attn_out_BLD
+
+
+# @TODO #######################################################################
+class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
+    """implements the KV cache mechanism"""
+
+    def __init__(self, config):
+        super().__init__()
+        self.use_cache = config.use_cache
+
+    def forward(self, x_BLD, freqs_cis, mask, layer_past=None):
+        # A) figure out if we passed a cached KV
+        has_layer_past = layer_past is not None and layer_past.numel() > 0
+
+        if not self.training:
+            self.dropout_p = 0
+
+        bsz, seq_len, _ = x_BLD.size()
+        # B) if we have a cached KV, apply the offset to the sequence length for RoPE
+        # @TODO
+
+        # C) before scaled_dot_product_attention we are goin to
+        # Cache QKV values
+        if has_layer_past:
+            past_key, past_value = layer_past
+            key_layer = torch.cat((past_key.type_as(key_layer), key_layer), dim=0)
+            value_layer = torch.cat(
+                (past_value.type_as(value_layer), value_layer), dim=0
+            )
+        if self.use_cache:
+            kv_cache = torch.stack((key_layer, value_layer))
+        else:
+            kv_cache = None
+
+        #  ####################################################################
+        # compute attention here
+
+        # rest is same
+
+        return attn_out_BLD, kv_cache
+
+
+# note^ IDK what is contained in layer_past ... just the stacked tensors
+
+
+# ^^^^^ #######################################################################
 
 
 class DecoderFeedForward(nn.Module):

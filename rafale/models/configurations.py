@@ -87,6 +87,22 @@ class BertConfig:
 
 
 @dataclass
+class BertTinyConfig:
+    embed_dim: int = 128
+    vocab_size: int = 30522  # could usage would be to 30522 + num_extra_tokens
+    attention_dropout: float = 0.1
+    hidden_dropout: float = 0.1
+    num_heads: int = 2
+    ff_dim: int = 512
+    max_pos_embedding: int = 512
+    layer_norm_eps: float = 1e-12
+    num_blocks: int = 2
+    pad_token_id: int = 0
+    num_token_type: int = 2
+    fast_attention: bool = False  # use xformers (todo: add FlashAttention2)
+
+
+@dataclass
 class RobertaConfig:
     embed_dim: int = 768
     vocab_size: int = 50265
