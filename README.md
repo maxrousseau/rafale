@@ -59,8 +59,11 @@ v0.1 - MVP
 - [ ] integration with lm-eval-harness
 - [ ] datapipes for CLM and MLM
   - local dataloader for now
-- [ ] ```tests``` for pythia and bert models on tinystories
-- [ ] ```main.py``` handles both training and evaluation (together or separately)
+  - [x] CLM tinystories
+  - [ ] MLM tinystories
+  - [ ] Imdb classification
+- [-] ```tests``` for pythia and bert models on tinystories
+- [x] ```main.py``` handles both training and evaluation (together or separately)
 - [-] BERT/RoBERTa support (MLM objective)
 - [x] Mosaic Composer/Trainer (see lightning-fabric simple trainer example and start from there)
   + bf16/fp16, gradient clipping, and gradient accumulation
