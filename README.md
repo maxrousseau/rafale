@@ -4,7 +4,7 @@
 
 <div class="logo">
 <p align="center">
-<img src="./lil_logo/rafale-logo.png" alt="rafale-logo" width="200px" />
+<img src="./media/rafale-logo.png" alt="rafale-logo" width="200px" />
 <br>
 Rafale is a simple and opinionated transformer training CLI.
 </p>
