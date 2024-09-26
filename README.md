@@ -29,6 +29,13 @@ learning/research tool. It is **not** a fully fledged library for large scale tr
 It should be thought of as a starting point for research projects to bootstrap experiments on small LMs. The best way to
 use rafale is to simply fork it and build on top of it for your specific purposes.
 
+For large scale experiments other frameworks/libraries exist:
+- torchtitan (Pytorch)
+- torchtune (Pytorch)
+- litGPT (LightningAI)
+- GPT-NeoX (EleutherAI)
+- nanotron (Huggingface)
+
 ## Usage
 
 ```sh

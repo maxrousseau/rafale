@@ -1,0 +1,17 @@
+run:
+    name: "test-ministories" # name of your experiment, used for checkpointing
+    lr:
+    n_epochs:
+    lr_schedule:
+    seed: 42
+
+model:
+    config: "pythia14m" # config key
+    type: "decoder"
+    use_pretrained: True
+
+data:
+    pipeline: "tinystories_neox" # the preprocessing/tokenization pipeline
+    config: "mini_tinystories" # data parameters BS, seq_len, etc.
+
+# we want data and model configurations to be in files rather than in yaml, leave training hyperparams to yaml config only
