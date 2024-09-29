@@ -133,6 +133,7 @@ class Pythia14MConfig:
     hidden_act: str = "gelu"
     max_pos_embedding: int = 2048
     vocab_size: int = 50304
+    use_cache: bool = False
 
     parallel_residual: bool = True
 

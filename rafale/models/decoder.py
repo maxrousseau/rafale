@@ -22,7 +22,7 @@ from composer.models import ComposerModel
 # modify: model class, layer class, attention class, Rope class
 
 
-class NeoXRoPE(nn.Module):
+ class NeoXRoPE(nn.Module):
     @classmethod
     def precompute_sin_cos_cache(cls, dim=None, seq_len=None, base=10000):
         """Computes the cos and sin angles to be applied to the token vectors.
@@ -55,7 +55,7 @@ class NeoXRoPE(nn.Module):
         t = torch.arange(seq_len, dtype=torch.int64).type_as(inv_freq)
         freqs = torch.einsum("i,j->ij", t, inv_freq)
         emb = torch.cat((freqs, freqs), dim=-1)
-        cos_cached = emb.cos()[None, None, :, :]
+        cos_cached = emb.cos()[None, None, :, :]  # shape is [1, 1, L, R]
         sin_cached = emb.sin()[None, None, :, :]
 
         return cos_cached, sin_cached
@@ -73,12 +73,16 @@ class NeoXRoPE(nn.Module):
             cls.rotate_half(k_BHLR) * sin
         )
 
-    # @TODO below not validated...
+    # @TODO below not tested yet, but the function call works
     @classmethod
     def apply_rotary_pos_emb_offset(cls, q, k, cos, sin, offset: int = 0):
+        """
+        q and k are shape:      BHLR
+        cos, sin are shape:     11LR
+        """
         cos, sin = (
-            cos[offset : q.shape[0] + offset, ...],
-            sin[offset : q.shape[0] + offset, ...],
+            cos[:, :, offset : q.shape[2] + offset, :],
+            sin[:, :, offset : q.shape[2] + offset, :],
         )
 
         return (q * cos) + (cls.rotate_half(q) * sin), (k * cos) + (
@@ -231,18 +235,18 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
         super().__init__()
         self.use_cache = config.use_cache
 
-    def forward(self, x_BLD, freqs_cis, layer_past=None):
+    def forward(self, x_BLD, freqs_cis, past_kv=None):
         # A) figure out if we passed a cached KV
         assert freqs_cis is not None
-        has_layer_past = layer_past is not None and layer_past.numel() > 0
+        has_past_kv = past_kv is not None and past_kv.numel() > 0
 
         if not self.training:
             self.dropout_p = 0
 
         bsz, seq_len, _ = x_BLD.size()
         # B) if we have a cached KV, apply the offset to the sequence length for RoPE
-        if has_layer_past:
-            offset = layer_past[0].shape[0]
+        if has_past_kv:
+            offset = past_kv[0].shape[2] # we want the lenght here, our kv shape is BHLd
             seq_len += offset
 
         # projections
@@ -276,8 +280,8 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
 
         # C) before scaled_dot_product_attention we are going to
         # Cache QKV values
-        if has_layer_past:
-            past_key, past_value = layer_past
+        if has_past_kv:
+            past_key, past_value = past_kv
             k_BHLd = torch.cat((past_key.type_as(k_BHLd), k_BHLd), dim=0)
             v_BHLd = torch.cat((past_value.type_as(v_BHLd), v_BHLd), dim=0)
 
@@ -292,7 +296,8 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
             is_causal=True,
             scale=self.norm_factor,
             dropout_p=self.dropout_p,
-        )
+        ) # even with rectangular matrices scaled_dot_product_attention will handle the causal mask by apply left bias
+        # causal mask which is exactly what we need.
 
         attn_out_BLD = self._merge_heads(attn_out_BHLd)
 
@@ -385,22 +390,22 @@ class DecoderBlockKVcache(DecoderBlock):
         self.ffn_norm = nn.LayerNorm(config.embed_dim, config.layer_norm_eps)
         self.attention_norm = nn.LayerNorm(config.embed_dim, config.layer_norm_eps)
 
-    def forward(self, x_BLD, freqs_cis, parallel_residual=True, use_cache=True):
+    def forward(self, x_BLD, freqs_cis, layer_kv_cache, parallel_residual=True):
         assert freqs_cis is not None
 
         if parallel_residual:
-            attn_out_BLD, kv_cache = self.attention(
-                self.attention_norm(x_BLD), freqs_cis
+            attn_out_BLD, layer_kv_cache = self.attention(
+                self.attention_norm(x_BLD), freqs_cis, layer_kv_cache
             )
             out_BLD = x_BLD + attn_out_BLD + self.feed_forward(self.ffn_norm(x_BLD))
         else:
-            attn_out_BLD, kv_cache = self.attention(
-                self.attention_norm(x_BLD), freqs_cis
+            attn_out_BLD, layer_kv_cache = self.attention(
+                self.attention_norm(x_BLD), freqs_cis, layer_kv_cache
             )
             h_BLD = x_BLD + attn_out_BLD
             out_BLD = h_BLD + self.feed_forward(self.ffn_norm(h_BLD))
 
-        return out_BLD
+        return out_BLD, layer_kv_cache
 
 
 class DecoderWrapper(ComposerModel):
@@ -461,7 +466,11 @@ class DecoderWrapper(ComposerModel):
         # @TODO :: does not handle KV for now... @HERE figure this out next and try a simple fwd pass with and without
         # pastKV when self.config.use_cache is True
 
+        kv_cache = tuple([None for i in range(self.config.num_blocks)])
+
         for i, layer in enumerate(self.layers):
+            if self.config.use_cache:
+                x = layer(x, freqs_cis, )
             x = layer(x, freqs_cis)
         x = self.final_norm(x)
         logits = self.output(x)
