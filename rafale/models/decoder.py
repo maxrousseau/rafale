@@ -17,6 +17,8 @@ from composer.models import ComposerModel
 
 
 # @TODO kv cache implementation
+# @TODO greedy decoding implementation (put in another file...)
+# @TODO remove mask from everything
 # modify: model class, layer class, attention class, Rope class
 
 
@@ -58,16 +60,17 @@ class NeoXRoPE(nn.Module):
 
         return cos_cached, sin_cached
 
+    @staticmethod
+    def rotate_half(x):
+        x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
+        return torch.cat((-x2, x1), dim=x1.ndim - 1)
+
     @classmethod
     def apply_rotary_pos_emb(cls, q_BHLR, k_BHLR, cos, sin):
         """Applies the rotation to the input queries and key features."""
 
-        def rotate_half(x):
-            x1, x2 = x[..., : x.shape[-1] // 2], x[..., x.shape[-1] // 2 :]
-            return torch.cat((-x2, x1), dim=x1.ndim - 1)
-
-        return (q_BHLR * cos) + (rotate_half(q_BHLR) * sin), (k_BHLR * cos) + (
-            rotate_half(k_BHLR) * sin
+        return (q_BHLR * cos) + (cls.rotate_half(q_BHLR) * sin), (k_BHLR * cos) + (
+            cls.rotate_half(k_BHLR) * sin
         )
 
     # @TODO below not validated...
@@ -77,7 +80,10 @@ class NeoXRoPE(nn.Module):
             cos[offset : q.shape[0] + offset, ...],
             sin[offset : q.shape[0] + offset, ...],
         )
-        return (q * cos) + (rotate_half(q) * sin), (k * cos) + (rotate_half(k) * sin)
+
+        return (q * cos) + (cls.rotate_half(q) * sin), (k * cos) + (
+            cls.rotate_half(k) * sin
+        )
 
 
 class DecoderEmbedding(nn.Module):
@@ -166,7 +172,7 @@ class DecoderAttentionRotary(nn.Module):
         # -> [bs, seq_len, hidden_size]
         return tensor
 
-    def forward(self, x_BLD, freqs_cis, mask):
+    def forward(self, x_BLD, freqs_cis):
         if not self.training:
             self.dropout_p = 0
         bsz, seq_len, _ = x_BLD.size()
@@ -225,8 +231,9 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
         super().__init__()
         self.use_cache = config.use_cache
 
-    def forward(self, x_BLD, freqs_cis, mask, layer_past=None):
+    def forward(self, x_BLD, freqs_cis, layer_past=None):
         # A) figure out if we passed a cached KV
+        assert freqs_cis is not None
         has_layer_past = layer_past is not None and layer_past.numel() > 0
 
         if not self.training:
@@ -234,30 +241,64 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
 
         bsz, seq_len, _ = x_BLD.size()
         # B) if we have a cached KV, apply the offset to the sequence length for RoPE
-        # @TODO
+        if has_layer_past:
+            offset = layer_past[0].shape[0]
+            seq_len += offset
 
-        # C) before scaled_dot_product_attention we are goin to
+        # projections
+        qkv = self.query_key_value(x_BLD)
+
+        # [batch, seq_len, (num_heads * 3 * head_size)]
+        #   --> [batch, seq_len, num_heads, 3 * head_size]
+        new_qkv_shape = qkv.size()[:-1] + (self.num_heads, 3 * self.head_dim)
+        qkv = qkv.view(*new_qkv_shape)
+
+        # [batch, seq_len, num_attention_heads, 3 * head_size] --> 3 [batch, num_attention_heads, seq_len, head_size]
+        q_BHLd = qkv[..., : self.head_dim].permute(0, 2, 1, 3)
+        k_BHLd = qkv[..., self.head_dim : 2 * self.head_dim].permute(0, 2, 1, 3)
+        v_BHLd = qkv[..., 2 * self.head_dim :].permute(0, 2, 1, 3)
+
+        # Slice the precomputed freqs_cis based on actual seq_len --> [1, 1, seq_len, R]
+        cos = freqs_cis[0][:, :, :seq_len, :]
+        sin = freqs_cis[1][:, :, :seq_len, :]
+
+        q_rot = q_BHLd[..., : self.rotary_ndims]
+        q_pass = q_BHLd[..., self.rotary_ndims :]
+        k_rot = k_BHLd[..., : self.rotary_ndims]
+        k_pass = k_BHLd[..., self.rotary_ndims :]
+
+        q_rot, k_rot = NeoXRoPE.apply_rotary_pos_emb_offset(
+            q_rot, k_rot, cos, sin, offset=offset
+        )
+
+        q_BHLd = torch.cat((q_rot, q_pass), dim=-1)
+        k_BHLd = torch.cat((k_rot, k_pass), dim=-1)
+
+        # C) before scaled_dot_product_attention we are going to
         # Cache QKV values
         if has_layer_past:
             past_key, past_value = layer_past
-            key_layer = torch.cat((past_key.type_as(key_layer), key_layer), dim=0)
-            value_layer = torch.cat(
-                (past_value.type_as(value_layer), value_layer), dim=0
-            )
-        if self.use_cache:
-            kv_cache = torch.stack((key_layer, value_layer))
-        else:
-            kv_cache = None
+            k_BHLd = torch.cat((past_key.type_as(k_BHLd), k_BHLd), dim=0)
+            v_BHLd = torch.cat((past_value.type_as(v_BHLd), v_BHLd), dim=0)
 
+        kv_cache = torch.stack((k_BHLd, v_BHLd))
         #  ####################################################################
-        # compute attention here
 
-        # rest is same
+        # compute attention here
+        attn_out_BHLd = scaled_dot_product_attention(
+            q_BHLd,
+            k_BHLd,
+            v_BHLd,
+            is_causal=True,
+            scale=self.norm_factor,
+            dropout_p=self.dropout_p,
+        )
+
+        attn_out_BLD = self._merge_heads(attn_out_BHLd)
+
+        attn_out_BLD = self.dense(attn_out_BLD)
 
         return attn_out_BLD, kv_cache
-
-
-# note^ IDK what is contained in layer_past ... just the stacked tensors
 
 
 # ^^^^^ #######################################################################
@@ -307,17 +348,56 @@ class DecoderBlock(nn.Module):
         self.ffn_norm = nn.LayerNorm(config.embed_dim, config.layer_norm_eps)
         self.attention_norm = nn.LayerNorm(config.embed_dim, config.layer_norm_eps)
 
-    def forward(self, x_BLD, freqs_cis, mask, parallel_residual=True, use_cache=True):
+    def forward(self, x_BLD, freqs_cis, parallel_residual=True, use_cache=True):
         assert freqs_cis is not None
 
         if parallel_residual:
             out_BLD = (
                 x_BLD
-                + self.attention(self.attention_norm(x_BLD), freqs_cis, mask)
+                + self.attention(self.attention_norm(x_BLD), freqs_cis)
                 + self.feed_forward(self.ffn_norm(x_BLD))
             )
         else:
-            h_BLD = x_BLD + self.attention(self.attention_norm(x_BLD), freqs_cis, mask)
+            h_BLD = x_BLD + self.attention(self.attention_norm(x_BLD), freqs_cis)
+            out_BLD = h_BLD + self.feed_forward(self.ffn_norm(h_BLD))
+
+        return out_BLD
+
+
+# @TODO **********************************************************************
+# handle KV cache state
+class DecoderBlockKVcache(DecoderBlock):
+    """A single trasnformer decoder block/layer.
+
+    Tensor dimension names:
+    - B batch size
+    - L sequence length
+    - H number of attention heads
+    - D embedding dimension
+    - d attention head dimension D//H
+    - F feedforward dimension
+    """
+
+    def __init__(self, config):
+        super().__init__()
+        self.attention = DecoderAttentionRotaryKVCache(config)
+        self.feed_forward = DecoderFeedForward(config)
+        self.ffn_norm = nn.LayerNorm(config.embed_dim, config.layer_norm_eps)
+        self.attention_norm = nn.LayerNorm(config.embed_dim, config.layer_norm_eps)
+
+    def forward(self, x_BLD, freqs_cis, parallel_residual=True, use_cache=True):
+        assert freqs_cis is not None
+
+        if parallel_residual:
+            attn_out_BLD, kv_cache = self.attention(
+                self.attention_norm(x_BLD), freqs_cis
+            )
+            out_BLD = x_BLD + attn_out_BLD + self.feed_forward(self.ffn_norm(x_BLD))
+        else:
+            attn_out_BLD, kv_cache = self.attention(
+                self.attention_norm(x_BLD), freqs_cis
+            )
+            h_BLD = x_BLD + attn_out_BLD
             out_BLD = h_BLD + self.feed_forward(self.ffn_norm(h_BLD))
 
         return out_BLD
@@ -331,14 +411,19 @@ class DecoderWrapper(ComposerModel):
         self.config = config
         self.token_embeddings = DecoderEmbedding(config)
 
-        self.layers = nn.ModuleList(
-            DecoderBlock(config) for _ in range(config.num_blocks)
-        )
+        if self.config.use_cache:
+            self.layers = nn.ModuleList(
+                DecoderBlockKVcache(config) for _ in range(config.num_blocks)
+            )
+        else:
+            self.layers = nn.ModuleList(
+                DecoderBlock(config) for _ in range(config.num_blocks)
+            )
+
         self.final_norm = nn.LayerNorm(config.embed_dim, config.layer_norm_eps)
         self.output = nn.Linear(config.embed_dim, config.vocab_size, bias=False)
 
         self.freqs_cis: Optional[Tensor] = None
-        self.causal_mask: Optional[Tensor] = None
 
         self.max_batch_size = -1
         self.max_seq_length = config.max_pos_embedding
@@ -362,28 +447,22 @@ class DecoderWrapper(ComposerModel):
 
         self.freqs_cis = (self.cos, self.sin)
 
-        self.causal_mask = torch.ones(
-            self.config.max_pos_embedding,
-            self.config.max_pos_embedding,
-            dtype=torch.bool,
-        )
-        self.causal_mask = torch.tril(self.causal_mask)
-        self.causal_mask = self.causal_mask.unsqueeze(0).unsqueeze(0)
-
     def forward(self, batch: Tensor):
         # if self.freqs_cis is None or self.causal_mask is None:
         if self.freqs_cis is None:
             self.setup_caches()  # Caches must be initialized first
 
-        mask = self.causal_mask  # not actually used for now...
         freqs_cis = self.freqs_cis
 
         idx = batch["input_ids"]
 
         x = self.token_embeddings(idx)
 
+        # @TODO :: does not handle KV for now... @HERE figure this out next and try a simple fwd pass with and without
+        # pastKV when self.config.use_cache is True
+
         for i, layer in enumerate(self.layers):
-            x = layer(x, freqs_cis, mask)
+            x = layer(x, freqs_cis)
         x = self.final_norm(x)
         logits = self.output(x)
 

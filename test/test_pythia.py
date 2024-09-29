@@ -57,6 +57,24 @@ def test_pretrained(rafale_gpt, hf_gpt=None, tokenizer=None):
     return rafale_out, hf_out
 
 
+def test_kvcache():
+    """ """
+
+    # tuple of shape num_layers, 2 (keys, values), tensor BHLd
+    # make a fake kv-cache of length 4
+    kv_cache = []
+    n_layers = 6
+    cache_len = 4
+    n_heads = 4
+    head_dim = 32
+    for i in range(n_layers):
+        k = torch.randn(1, n_heads, cache_len, 32)
+        v = torch.randn(1, n_heads, cache_len, 32)
+        kv_cache.append((k, v))
+
+    return tuple(kv_cache)
+
+
 # eval works!
 def test_eval(rafale_gpt, tokenizer):
     rafale_gpt.eval()
