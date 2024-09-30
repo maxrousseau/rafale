@@ -22,7 +22,7 @@ from composer.models import ComposerModel
 # modify: model class, layer class, attention class, Rope class
 
 
- class NeoXRoPE(nn.Module):
+class NeoXRoPE(nn.Module):
     @classmethod
     def precompute_sin_cos_cache(cls, dim=None, seq_len=None, base=10000):
         """Computes the cos and sin angles to be applied to the token vectors.
@@ -232,13 +232,12 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
     """implements the KV cache mechanism"""
 
     def __init__(self, config):
-        super().__init__()
-        self.use_cache = config.use_cache
+        super().__init__(config)
 
     def forward(self, x_BLD, freqs_cis, past_kv=None):
         # A) figure out if we passed a cached KV
         assert freqs_cis is not None
-        has_past_kv = past_kv is not None and past_kv.numel() > 0
+        has_past_kv = past_kv is not None and past_kv[0].numel() > 0
 
         if not self.training:
             self.dropout_p = 0
@@ -246,8 +245,12 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
         bsz, seq_len, _ = x_BLD.size()
         # B) if we have a cached KV, apply the offset to the sequence length for RoPE
         if has_past_kv:
-            offset = past_kv[0].shape[2] # we want the lenght here, our kv shape is BHLd
+            offset = past_kv[0].shape[
+                2
+            ]  # we want the lenght here, our kv shape is BHLd
             seq_len += offset
+        else:
+            offset = 0
 
         # projections
         qkv = self.query_key_value(x_BLD)
@@ -282,10 +285,12 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
         # Cache QKV values
         if has_past_kv:
             past_key, past_value = past_kv
-            k_BHLd = torch.cat((past_key.type_as(k_BHLd), k_BHLd), dim=0)
-            v_BHLd = torch.cat((past_value.type_as(v_BHLd), v_BHLd), dim=0)
 
-        kv_cache = torch.stack((k_BHLd, v_BHLd))
+            k_BHLd = torch.cat((past_key.type_as(k_BHLd), k_BHLd), dim=2)
+            v_BHLd = torch.cat((past_value.type_as(v_BHLd), v_BHLd), dim=2)
+
+        # kv_cache = torch.stack((k_BHLd, v_BHLd))
+        kv_cache = (k_BHLd, v_BHLd)  # let's keep them as a list of tuples
         #  ####################################################################
 
         # compute attention here
@@ -296,7 +301,7 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
             is_causal=True,
             scale=self.norm_factor,
             dropout_p=self.dropout_p,
-        ) # even with rectangular matrices scaled_dot_product_attention will handle the causal mask by apply left bias
+        )  # even with rectangular matrices scaled_dot_product_attention will handle the causal mask by apply left bias
         # causal mask which is exactly what we need.
 
         attn_out_BLD = self._merge_heads(attn_out_BHLd)
@@ -384,7 +389,7 @@ class DecoderBlockKVcache(DecoderBlock):
     """
 
     def __init__(self, config):
-        super().__init__()
+        super().__init__(config)
         self.attention = DecoderAttentionRotaryKVCache(config)
         self.feed_forward = DecoderFeedForward(config)
         self.ffn_norm = nn.LayerNorm(config.embed_dim, config.layer_norm_eps)
@@ -452,7 +457,7 @@ class DecoderWrapper(ComposerModel):
 
         self.freqs_cis = (self.cos, self.sin)
 
-    def forward(self, batch: Tensor):
+    def forward(self, batch: Tensor, past_kv_cache=None):
         # if self.freqs_cis is None or self.causal_mask is None:
         if self.freqs_cis is None:
             self.setup_caches()  # Caches must be initialized first
@@ -466,16 +471,20 @@ class DecoderWrapper(ComposerModel):
         # @TODO :: does not handle KV for now... @HERE figure this out next and try a simple fwd pass with and without
         # pastKV when self.config.use_cache is True
 
-        kv_cache = tuple([None for i in range(self.config.num_blocks)])
+        if self.config.use_cache and past_kv_cache is None:
+            past_kv_cache = [None] * self.config.num_blocks
+        kv_cache_list = []
 
         for i, layer in enumerate(self.layers):
             if self.config.use_cache:
-                x = layer(x, freqs_cis, )
-            x = layer(x, freqs_cis)
+                x, layer_kv_cache = layer(x, freqs_cis, past_kv_cache[i])
+                kv_cache_list.append(layer_kv_cache)
+            else:
+                x = layer(x, freqs_cis)
         x = self.final_norm(x)
         logits = self.output(x)
 
-        return logits
+        return logits, kv_cache_list
 
     def loss(self, outputs, batch):
         targets = batch["labels"]

@@ -133,7 +133,7 @@ class Pythia14MConfig:
     hidden_act: str = "gelu"
     max_pos_embedding: int = 2048
     vocab_size: int = 50304
-    use_cache: bool = False
+    use_cache: bool = True
 
     parallel_residual: bool = True
 
@@ -142,7 +142,6 @@ class Pythia14MConfig:
 
     layer_norm_eps: float = 1e-05
     num_blocks: int = 6
-    # pad_token_id: int = -100
 
     bos_token_id: int = 0
     eos_token_id: int = 0
