@@ -234,7 +234,7 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
     def __init__(self, config):
         super().__init__(config)
 
-    def forward(self, x_BLD, freqs_cis, past_kv=None):
+    def forward(self, x_BLD, freqs_cis, causal_mask=None, past_kv=None):
         # A) figure out if we passed a cached KV
         assert freqs_cis is not None
         has_past_kv = past_kv is not None and past_kv[0].numel() > 0
@@ -277,7 +277,6 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
         q_rot, k_rot = NeoXRoPE.apply_rotary_pos_emb_offset(
             q_rot, k_rot, cos, sin, offset=offset
         )
-        # @BUG ^ this is fine
 
         q_BHLd = torch.cat((q_rot, q_pass), dim=-1)
         k_BHLd = torch.cat((k_rot, k_pass), dim=-1)
@@ -295,11 +294,13 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
         #  ####################################################################
 
         # compute attention here
+        # @BUG FOUND IT!!! the causal mask is the problem!
         attn_out_BHLd = scaled_dot_product_attention(
             q_BHLd,
             k_BHLd,
             v_BHLd,
-            is_causal=True,
+            is_causal=False,
+            attn_mask=causal_mask,
             scale=self.norm_factor,
             dropout_p=self.dropout_p,
         )  # even with rectangular matrices scaled_dot_product_attention will handle the causal mask by apply left bias
@@ -398,12 +399,14 @@ class DecoderBlockKVcache(DecoderBlock):
         self.ffn_norm = nn.LayerNorm(config.embed_dim, config.layer_norm_eps)
         self.attention_norm = nn.LayerNorm(config.embed_dim, config.layer_norm_eps)
 
-    def forward(self, x_BLD, freqs_cis, layer_kv_cache, parallel_residual=True):
+    def forward(
+        self, x_BLD, freqs_cis, causal_mask, layer_kv_cache, parallel_residual=True
+    ):
         assert freqs_cis is not None
 
         if parallel_residual:
             attn_out_BLD, layer_kv_cache = self.attention(
-                self.attention_norm(x_BLD), freqs_cis, layer_kv_cache
+                self.attention_norm(x_BLD), freqs_cis, causal_mask, layer_kv_cache
             )
             out_BLD = x_BLD + attn_out_BLD + self.feed_forward(self.ffn_norm(x_BLD))
 
@@ -461,6 +464,31 @@ class DecoderWrapper(ComposerModel):
 
         self.freqs_cis = (self.cos, self.sin)
 
+    def _generate_causal_mask(self, cache_length: int, new_length: int) -> torch.Tensor:
+        """
+        Creates a causal mask for autoregressive attention with KV caching.
+
+        Args:
+            cache_length (int): Number of cached tokens (K).
+            new_length (int): Number of new tokens to generate (T).
+            device (torch.device): The device on which to create the mask.
+            dtype (torch.dtype): The data type of the mask tensor.
+
+        Returns:
+            torch.Tensor: A (K + T) x (K + T) mask tensor where:
+                          - Cached tokens can attend to all cached and new tokens.
+                          - New tokens can attend to all cached tokens and up to their current position in new tokens.
+                          - Future new tokens are masked to prevent attention.
+        """
+
+        causal_mask = torch.tril(torch.ones(new_length, new_length)).bool()
+
+        if cache_length > 0:
+            cache_tokens_mask = torch.ones((new_length, cache_length)).bool()
+            causal_mask = torch.cat((cache_tokens_mask, causal_mask), dim=1)
+
+        return causal_mask
+
     def forward(self, batch: Tensor, past_kv_cache=None):
         # if self.freqs_cis is None or self.causal_mask is None:
         if self.freqs_cis is None:
@@ -469,6 +497,7 @@ class DecoderWrapper(ComposerModel):
         freqs_cis = self.freqs_cis
 
         idx = batch["input_ids"]
+        num_new_tokens = idx.size(1)
 
         x = self.token_embeddings(idx)
 
@@ -477,11 +506,18 @@ class DecoderWrapper(ComposerModel):
 
         if self.config.use_cache and past_kv_cache is None:
             past_kv_cache = [None] * self.config.num_blocks
+
+        if past_kv_cache[0] is not None:
+            num_cache_tokens = past_kv_cache[0][0].size(2)
+        else:
+            num_cache_tokens = 0
+        causal_mask = self._generate_causal_mask(num_cache_tokens, num_new_tokens)
+
         kv_cache_list = []
 
         for i, layer in enumerate(self.layers):
             if self.config.use_cache:
-                x, layer_kv_cache = layer(x, freqs_cis, past_kv_cache[i])
+                x, layer_kv_cache = layer(x, freqs_cis, causal_mask, past_kv_cache[i])
                 kv_cache_list.append(layer_kv_cache)
             else:
                 x = layer(x, freqs_cis)
