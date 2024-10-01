@@ -277,6 +277,7 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
         q_rot, k_rot = NeoXRoPE.apply_rotary_pos_emb_offset(
             q_rot, k_rot, cos, sin, offset=offset
         )
+        # @BUG ^ this is fine
 
         q_BHLd = torch.cat((q_rot, q_pass), dim=-1)
         k_BHLd = torch.cat((k_rot, k_pass), dim=-1)
@@ -303,6 +304,8 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
             dropout_p=self.dropout_p,
         )  # even with rectangular matrices scaled_dot_product_attention will handle the causal mask by apply left bias
         # causal mask which is exactly what we need.
+        print(f"attn_out: {attn_out_BHLd.size()}")
+        print(f"attn_out: {attn_out_BHLd[0][-1][-1][-20:]}")
 
         attn_out_BLD = self._merge_heads(attn_out_BHLd)
 
@@ -403,6 +406,7 @@ class DecoderBlockKVcache(DecoderBlock):
                 self.attention_norm(x_BLD), freqs_cis, layer_kv_cache
             )
             out_BLD = x_BLD + attn_out_BLD + self.feed_forward(self.ffn_norm(x_BLD))
+
         else:
             attn_out_BLD, layer_kv_cache = self.attention(
                 self.attention_norm(x_BLD), freqs_cis, layer_kv_cache

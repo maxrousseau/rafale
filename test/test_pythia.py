@@ -4,9 +4,7 @@ import numpy as np
 from safetensors import safe_open
 
 # from decoder import DecoderWrapper
-from configurations import Pythia14MConfig
-from convert_hf_weights import convert_pythia_params_dict
-
+from rafale.models.configurations import Pythia14MConfig, load_safetensors
 
 from transformers import AutoTokenizer
 
@@ -45,9 +43,10 @@ def test_pretrained(rafale_gpt, hf_gpt=None, tokenizer=None):
     input_str = "Hello World from pythia!"
 
     tokens = tokenizer(input_str, return_tensors="pt")
+
     with torch.no_grad():
         hf_out = hf_gpt(tokens["input_ids"])["logits"].detach().numpy()
-        rafale_out = rafale_gpt(tokens["input_ids"]).detach().numpy()
+        rafale_out = rafale_gpt(tokens).detach().numpy()
 
     tol = 1e-05
     print(f"checking outputs at atol/rtol {tol}")
@@ -57,9 +56,8 @@ def test_pretrained(rafale_gpt, hf_gpt=None, tokenizer=None):
     return rafale_out, hf_out
 
 
-def test_kvcache():
+def test_kvcache(rafale_gpt, hf_gpt=None, tokenizer=None):
     """ """
-
     # tuple of shape num_layers, 2 (keys, values), tensor BHLd
     # make a fake kv-cache of length 4
     kv_cache = []
@@ -72,7 +70,38 @@ def test_kvcache():
         v = torch.randn(1, n_heads, cache_len, 32)
         kv_cache.append((k, v))
 
-    return tuple(kv_cache)
+    hf_gpt.eval()
+    rafale_gpt.eval()
+
+    input_str = "Hello World from pythia!"
+
+    tokens = tokenizer(input_str, return_tensors="pt")
+
+    with torch.no_grad():
+        a = rafale_gpt(tokens)[0].detach().numpy()
+        b = rafale_gpt(tokens)[0].detach().numpy()
+
+    np.testing.assert_allclose(a, b, rtol=1e-05, atol=1e-05)
+    print("DETERMINISM OK")
+
+    with torch.no_grad():
+        hf_out = hf_gpt(tokens["input_ids"], use_cache=True, past_key_values=kv_cache)
+        hf_out = hf_out["logits"].detach().numpy()
+
+        rafale_out = rafale_gpt(tokens, past_kv_cache=kv_cache)[0].detach().numpy()
+
+    tol = 1e-05
+    print(f"checking outputs at atol/rtol {tol}")
+
+    np.testing.assert_allclose(rafale_out, hf_out, rtol=tol, atol=tol)
+
+    return rafale_out, hf_out
+
+
+def init_model(load_weights=True):
+    rafale_pythia = DecoderWrapper(Pythia14MConfig)
+    rafale_pythia = load_safetensors(rafale_pythia, Pythia14MConfig)
+    return rafale_pythia
 
 
 # eval works!
@@ -90,7 +119,7 @@ def test_eval(rafale_gpt, tokenizer):
     np.testing.assert_allclose(a, b, rtol=1e-05, atol=1e-05)
 
 
-def iterative_debug(rafale_model, hf_model, tokenizer=None, layer=0):
+def iterative_debug(rafale_model, hf_model, tokenizer=None, layer=0, tol=1e-05):
     """
     save model outputs in dict and compare to locate the issue
     """
@@ -98,6 +127,18 @@ def iterative_debug(rafale_model, hf_model, tokenizer=None, layer=0):
     hf_input_activation = {}
     rafale_activation = {}
     rafale_input_activation = {}
+
+    # tuple of shape num_layers, 2 (keys, values), tensor BHLd
+    # make a fake kv-cache of length 4
+    kv_cache = []
+    n_layers = 6
+    cache_len = 4
+    n_heads = 4
+    head_dim = 32
+    for i in range(n_layers):
+        k = torch.randn(1, n_heads, cache_len, 32)
+        v = torch.randn(1, n_heads, cache_len, 32)
+        kv_cache.append((k, v))
 
     def get_hf_activation(name):
         def hook(model, input, output):
@@ -190,15 +231,21 @@ def iterative_debug(rafale_model, hf_model, tokenizer=None, layer=0):
     print(f"Dropout p should be 0: {rafale_model.layers[layer].attention.dropout_p}")
 
     with torch.no_grad():
-        hf_out = hf_model(tokens["input_ids"])["logits"].detach().numpy()
-        rafale_out = rafale_model(tokens["input_ids"]).detach().numpy()
+        # hf_out = hf_model(tokens["input_ids"])["logits"].detach().numpy()
+
+        hf_out = hf_model(tokens["input_ids"], use_cache=True, past_key_values=kv_cache)
+        hf_out = hf_out["logits"].detach().numpy()
+
+        # rafale_out = rafale_model(tokens)[0].detach().numpy()
+
+        rafale_out = rafale_model(tokens, past_kv_cache=kv_cache)[0].detach().numpy()
 
     # embedding ###################################################################
     np.testing.assert_allclose(
         rafale_activation["input_embeddings"].numpy(),
         hf_activation["input_embeddings"].numpy(),
-        rtol=1e-04,
-        atol=1e-04,
+        rtol=tol,
+        atol=tol,
     )
     print(f"Testing layer {layer}")
     print(f"✅ embeddings OK!")
@@ -208,8 +255,8 @@ def iterative_debug(rafale_model, hf_model, tokenizer=None, layer=0):
         np.testing.assert_allclose(
             rafale_input_activation["input_attn_norm"].numpy(),
             hf_input_activation["input_attn_norm"].numpy(),
-            rtol=1e-04,
-            atol=1e-04,
+            rtol=tol,
+            atol=tol,
         )
         print(f"✅ INPUTS of pre-attention norm OK!")
     except:
@@ -219,8 +266,8 @@ def iterative_debug(rafale_model, hf_model, tokenizer=None, layer=0):
         np.testing.assert_allclose(
             rafale_activation["attn_norm"].numpy(),
             hf_activation["attn_norm"].numpy(),
-            rtol=1e-04,
-            atol=1e-04,
+            rtol=tol,
+            atol=tol,
         )
         print(f"✅ pre-attention norm OK!")
     except:
@@ -232,8 +279,8 @@ def iterative_debug(rafale_model, hf_model, tokenizer=None, layer=0):
         np.testing.assert_allclose(
             rafale_activation["attn_inproj"].numpy(),
             hf_activation["attn_inproj"].numpy(),
-            rtol=1e-04,
-            atol=1e-04,
+            rtol=tol,
+            atol=tol,
         )
         print(f"✅ attention in-projection OK!")
 
@@ -245,21 +292,33 @@ def iterative_debug(rafale_model, hf_model, tokenizer=None, layer=0):
         np.testing.assert_allclose(
             rafale_input_activation["attn_dense"].numpy(),
             hf_input_activation["attn_dense"].numpy(),
-            rtol=1e-04,
-            atol=1e-04,
+            rtol=tol,
+            atol=tol,
         )
-    except:
-        print("⚠️ outputs of attention difference")
+        print(f"✅ inputs of attention dense OK")
 
-    print(f"✅ post-attention OK!")
+    except:
+        r = rafale_input_activation["attn_dense"].numpy()
+        h = hf_input_activation["attn_dense"].numpy()
+
+        print(r.shape)
+        print(h.shape)
+        print("⚠️ inputs of attention dense difference")
+
+    np.testing.assert_allclose(
+        rafale_input_activation["attn_dense"].numpy(),
+        hf_input_activation["attn_dense"].numpy(),
+        rtol=tol,
+        atol=tol,
+    )
 
     # OUTPUT OF ATTENTION DENSE LAYER  ########################################
     try:
         np.testing.assert_allclose(
             rafale_activation["attn_dense"].numpy(),
             hf_activation["attn_dense"].numpy(),
-            rtol=1e-04,
-            atol=1e-04,
+            rtol=tol,
+            atol=tol,
         )
         print(f"✅ attention out dense OK!")
     except:
@@ -269,8 +328,8 @@ def iterative_debug(rafale_model, hf_model, tokenizer=None, layer=0):
         np.testing.assert_allclose(
             rafale_activation["ffout"].numpy(),
             hf_activation["ffout"].numpy(),
-            rtol=1e-04,
-            atol=1e-04,
+            rtol=tol,
+            atol=tol,
         )
         print(f"✅ feedforward out dense OK!")
     except:
