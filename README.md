@@ -62,8 +62,10 @@ v0.1 - MVP
 - [ ] load weights from safetensors and include it in the config (BERT/RoBERTa and Pythia)
   - [x] pythia
   - [ ] BERT/RoBERTa (need to move from HF to safetensors)
-- [ ] Pythia KV-cache implementation + greedy generation
+- [x] Pythia KV-cache implementation
+- [ ] greedy generation
 - [ ] integration with lm-eval-harness
+- [ ] clean up test suite*
 - [ ] datapipes for CLM and MLM
   - local dataloader for now
   - [x] CLM tinystories

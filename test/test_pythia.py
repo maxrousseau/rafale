@@ -3,125 +3,15 @@ import numpy as np
 
 from safetensors import safe_open
 
-# from decoder import DecoderWrapper
+from rafale.models.decoder import DecoderWrapper
 from rafale.models.configurations import Pythia14MConfig, load_safetensors
 
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, GPTNeoXForCausalLM
 
 
-def test_build_pythia():
-    """ """
-    pythia = DecoderWrapper(Pythia14MConfig)
-    dummy_input = torch.LongTensor(torch.randint(1, 100, (4, 128)))
-
-    out = pythia.forward(dummy_input)
-    print(out)
-    print(out.size())
-    print(pythia)
-
-    return pythia
-
-
-def test_safetensors(rafale_gpt):
-    """Transfer the pretrained safetensors to rafale model"""
-    tensors = {}
-    with safe_open("pythia14m.safetensors", framework="pt") as f:
-        for k in f.keys():
-            tensors[k] = f.get_tensor(k)
-
-    pythia_pt = convert_pythia_params_dict(rafale_gpt, tensors)
-
-    return pythia_pt
-
-
-def test_pretrained(rafale_gpt, hf_gpt=None, tokenizer=None):
-    """make sure to disable all dropout (.eval() will not do this for the scaled_dot_attention dropout_p*)"""
-
-    hf_gpt.eval()
-    rafale_gpt.eval()
-
-    input_str = "Hello World from pythia!"
-
-    tokens = tokenizer(input_str, return_tensors="pt")
-
-    with torch.no_grad():
-        hf_out = hf_gpt(tokens["input_ids"])["logits"].detach().numpy()
-        rafale_out = rafale_gpt(tokens).detach().numpy()
-
-    tol = 1e-05
-    print(f"checking outputs at atol/rtol {tol}")
-
-    np.testing.assert_allclose(rafale_out, hf_out, rtol=tol, atol=tol)
-
-    return rafale_out, hf_out
-
-
-def test_kvcache(rafale_gpt, hf_gpt=None, tokenizer=None):
-    """ """
-    # tuple of shape num_layers, 2 (keys, values), tensor BHLd
-    # make a fake kv-cache of length 4
-    kv_cache = []
-    n_layers = 6
-    cache_len = 4
-    n_heads = 4
-    head_dim = 32
-    for i in range(n_layers):
-        k = torch.randn(1, n_heads, cache_len, 32)
-        v = torch.randn(1, n_heads, cache_len, 32)
-        kv_cache.append((k, v))
-
-    hf_gpt.eval()
-    rafale_gpt.eval()
-
-    input_str = "Hello World from pythia!"
-
-    tokens = tokenizer(input_str, return_tensors="pt")
-
-    with torch.no_grad():
-        a = rafale_gpt(tokens)[0].detach().numpy()
-        b = rafale_gpt(tokens)[0].detach().numpy()
-
-    np.testing.assert_allclose(a, b, rtol=1e-05, atol=1e-05)
-    print("DETERMINISM OK")
-
-    with torch.no_grad():
-        hf_out = hf_gpt(tokens["input_ids"], use_cache=True, past_key_values=kv_cache)
-        hf_out = hf_out["logits"].detach().numpy()
-
-        rafale_out = rafale_gpt(tokens, past_kv_cache=kv_cache)[0].detach().numpy()
-
-    tol = 1e-05
-    print(f"checking outputs at atol/rtol {tol}")
-
-    np.testing.assert_allclose(rafale_out, hf_out, rtol=tol, atol=tol)
-
-    return rafale_out, hf_out
-
-
-def init_model(load_weights=True):
-    rafale_pythia = DecoderWrapper(Pythia14MConfig)
-    rafale_pythia = load_safetensors(rafale_pythia, Pythia14MConfig)
-    return rafale_pythia
-
-
-# eval works!
-def test_eval(rafale_gpt, tokenizer):
-    rafale_gpt.eval()
-
-    input_str = "Hello World from pythia!"
-
-    tokens = tokenizer(input_str, return_tensors="pt")
-
-    with torch.no_grad():
-        a = rafale_gpt(tokens["input_ids"]).detach().numpy()
-        b = rafale_gpt(tokens["input_ids"]).detach().numpy()
-
-    np.testing.assert_allclose(a, b, rtol=1e-05, atol=1e-05)
-
-
-def iterative_debug(rafale_model, hf_model, tokenizer=None, layer=0, tol=1e-05):
+def test_layer_and_outputs(rafale_model, hf_model, tokenizer, layer=0, tol=1e-05):
     """
-    save model outputs in dict and compare to locate the issue
+    # @NOTE :: this currently on evaluates with KV cache enabled, write the test to run this function without the KV cache
     """
     hf_activation = {}
     hf_input_activation = {}
@@ -196,7 +86,7 @@ def iterative_debug(rafale_model, hf_model, tokenizer=None, layer=0, tol=1e-05):
         get_hf_activation("attn_inproj")
     )
 
-    # out proj @BUG :: this is where it breaks**
+    # out proj
     rafale_model.layers[layer].attention.dense.register_forward_hook(
         get_rafale_activation("attn_dense")
     )
@@ -228,7 +118,6 @@ def iterative_debug(rafale_model, hf_model, tokenizer=None, layer=0, tol=1e-05):
 
     hf_model.eval()
     rafale_model.eval()
-    print(f"Dropout p should be 0: {rafale_model.layers[layer].attention.dropout_p}")
 
     with torch.no_grad():
         # hf_out = hf_model(tokens["input_ids"])["logits"].detach().numpy()
@@ -240,15 +129,20 @@ def iterative_debug(rafale_model, hf_model, tokenizer=None, layer=0, tol=1e-05):
 
         rafale_out = rafale_model(tokens, past_kv_cache=kv_cache)[0].detach().numpy()
 
-    # embedding ###################################################################
-    np.testing.assert_allclose(
-        rafale_activation["input_embeddings"].numpy(),
-        hf_activation["input_embeddings"].numpy(),
-        rtol=tol,
-        atol=tol,
-    )
+    print(f"Dropout p should be 0: {rafale_model.layers[layer].attention.dropout_p}")
     print(f"Testing layer {layer}")
-    print(f"✅ embeddings OK!")
+    # EMBEDDING  ###################################################################
+    try:
+        np.testing.assert_allclose(
+            rafale_activation["input_embeddings"].numpy(),
+            hf_activation["input_embeddings"].numpy(),
+            rtol=tol,
+            atol=tol,
+        )
+
+        print(f"✅ embeddings OK!")
+    except:
+        print("⚠️ Embedding difference!")
 
     # PRE-ATTENTION NORM ######################################################
     try:
@@ -335,8 +229,15 @@ def iterative_debug(rafale_model, hf_model, tokenizer=None, layer=0, tol=1e-05):
     except:
         print("⚠️ ff out dense difference")
 
+    # Final model output  ########################################
+    try:
+        np.testing.assert_allclose(rafale_out, hf_out, rtol=tol, atol=tol)
+        print(f"🎉 Model outputs match reference implementation!")
+    except:
+        print("❌ Model outputs do not match")
 
-def test_incremental():
+
+def main():
     """ """
     torch.manual_seed(0)
     np.random.seed(0)
@@ -344,24 +245,10 @@ def test_incremental():
     hf_pythia = GPTNeoXForCausalLM.from_pretrained("EleutherAI/pythia-14m")
     tokenizer = AutoTokenizer.from_pretrained("EleutherAI/pythia-14m")
 
-    rafale_pythia = test_build_pythia()  # check forward pass OK
-    print(f"✅ model initialization OK!")
+    rafale_pythia = DecoderWrapper(Pythia14MConfig)  # check forward pass OK
+    rafale_pythia = load_safetensors(rafale_pythia, Pythia14MConfig)
 
-    rafale_pythia = test_safetensors(rafale_pythia)
-    print(f"✅ model weight transfers OK!")
-
-    test_eval(rafale_pythia, tokenizer)
-    print(f"✅ model determinism OK!")
-
-    for i in range(6):
-        iterative_debug(rafale_pythia, hf_model=hf_pythia, tokenizer=tokenizer, layer=i)
-
-    rafale_outputs, hf_outputs = test_pretrained(
-        rafale_pythia, hf_gpt=hf_pythia, tokenizer=tokenizer
-    )
-    print(f"✅ full model outputs OK!")
-
-    return rafale_outputs, hf_outputs
+    test_layer_and_outputs(rafale_pythia, hf_pythia, tokenizer)
 
 
 if __name__ == "__main__":

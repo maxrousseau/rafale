@@ -179,6 +179,7 @@ class DecoderAttentionRotary(nn.Module):
     def forward(self, x_BLD, freqs_cis):
         if not self.training:
             self.dropout_p = 0
+
         bsz, seq_len, _ = x_BLD.size()
 
         assert freqs_cis is not None
@@ -227,7 +228,6 @@ class DecoderAttentionRotary(nn.Module):
         return attn_out_BLD
 
 
-# @TODO #######################################################################
 class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
     """implements the KV cache mechanism"""
 
@@ -294,7 +294,6 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
         #  ####################################################################
 
         # compute attention here
-        # @BUG FOUND IT!!! the causal mask is the problem!
         attn_out_BHLd = scaled_dot_product_attention(
             q_BHLd,
             k_BHLd,
@@ -305,8 +304,6 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
             dropout_p=self.dropout_p,
         )  # even with rectangular matrices scaled_dot_product_attention will handle the causal mask by apply left bias
         # causal mask which is exactly what we need.
-        print(f"attn_out: {attn_out_BHLd.size()}")
-        print(f"attn_out: {attn_out_BHLd[0][-1][-1][-20:]}")
 
         attn_out_BLD = self._merge_heads(attn_out_BHLd)
 
@@ -378,7 +375,6 @@ class DecoderBlock(nn.Module):
         return out_BLD
 
 
-# @TODO **********************************************************************
 # handle KV cache state
 class DecoderBlockKVcache(DecoderBlock):
     """A single trasnformer decoder block/layer.
