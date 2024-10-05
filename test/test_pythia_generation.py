@@ -15,8 +15,8 @@ import numpy as np
 rafale_pythia = DecoderWrapper(Pythia14MConfig)
 rafale_pythia = load_safetensors(rafale_pythia, Pythia14MConfig)
 ifdp = InferenceDatapipeline("EleutherAI/pythia-14m")
-test_str = "<|endoftext|>The meaning of life on earth is to"
-rafale_pythia.eval()
+test_str = "Once upon a time,"
+
 # Define input_ids (e.g., starting with a <bos> token)
 # input_ids = torch.tensor([[Pythia14MConfig.bos_token_id]])  # Shape: (1, 1)
 
@@ -25,7 +25,11 @@ max_length = 32
 
 # Generate sequence using greedy decoding
 generated_sequence = greedy_decode(
-    rafale_pythia, ifdp(test_str), max_length, Pythia14MConfig.eos_token_id
+    rafale_pythia,
+    ifdp(test_str),
+    max_length,
+    Pythia14MConfig.eos_token_id,
+    check_repeat_ngrams=True,
 )
 
 generated_str = ifdp.ids_to_str(generated_sequence["input_ids"])
