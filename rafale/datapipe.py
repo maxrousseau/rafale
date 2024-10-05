@@ -129,6 +129,42 @@ class DataPipeline(ABC):
         return self.dataloaders
 
 
+class InferenceDatapipeline:
+    def __init__(self, tokenizer_path):
+        self.tokenizer = Tokenizer.from_pretrained(tokenizer_path)
+
+    def _tokenizer_templating(self, tokenizer, add_eos=True):
+        if add_eos:
+            tokenizer.post_processor = TemplateProcessing(
+                single="<|endoftext|> $A",
+                special_tokens=[
+                    ("<|endoftext|>", tokenizer.token_to_id("<|endoftext|>")),
+                ],
+            )
+
+            return tokenizer
+
+    def __call__(self, input_str, use_template: bool = True):
+        """
+        tokenize input_str
+        convert to torch tensor (batch_size=1)
+        add the endoftext token
+        """
+        if use_template:
+            self.tokenizer = self._tokenizer_templating(self.tokenizer)
+
+        tokenized_inputs = {
+            "input_ids": torch.LongTensor(
+                self.tokenizer.encode(input_str).ids
+            ).unsqueeze(dim=0)
+        }
+
+        return tokenized_inputs
+
+    def ids_to_str(self, tensor):
+        return ifdp.tokenizer.decode(tensor.squeeze().detach().numpy())
+
+
 class CausalCollator:
     def __init__(self, pad_token_id: int, input_id_key: str, pad_inputs: bool):
         self.pad_token_id = pad_token_id

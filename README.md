@@ -52,7 +52,7 @@ python rafale.main -r config.yaml
 | BERT    | ✅          |                |               |
 | RoBERTa | ✅          |                |               |
 | Pythia  | ✅          | ✅             |               |
-| S4      |             |                |               |
+| minLSTM/minGRU      |             |                |               |
 
 
 ## Roadmap
