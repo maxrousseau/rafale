@@ -26,8 +26,8 @@ from rafale.data_configurations import MINI_TINYSTORIES, TINYSTORIES
 parser = argparse.ArgumentParser(description="launch a training run")
 
 parser.add_argument(
-    "-r",
-    "--run_config",
+    "-c",
+    "--training_config",
     type=str,
     help="path to yaml run configuration file",
     required=True,
@@ -52,12 +52,13 @@ data_pipeline_dict = {
 
 def main():
     # load/parse yaml config
-    with open(args.run_config, "r") as f:
+    with open(args.training_config, "r") as f:
         config = yaml.safe_load(f)
 
     run_name = config["run"]["name"]
-    run_lr = config["run"]["lr"]
+    run_lr = float(config["run"]["lr"])
     run_n_epochs = config["run"]["n_epochs"]
+    run_seed = config["run"]["seed"]
 
     model_config_key = config["model"]["config"]
     model_type = config["model"]["type"]
@@ -92,12 +93,17 @@ def main():
     # build trainer
     trainer = Trainer(
         model=rafale_model,
+        seed=run_seed,
         train_dataloader=dataloaders["train"],
         eval_dataloader=dataloaders["test"],
-        optimizers=torch.optim.Adam(rafale_model.parameters(), lr=1e-5),
-        max_duration=1,  # epochs
+        optimizers=torch.optim.Adam(rafale_model.parameters(), lr=run_lr),
+        max_duration=run_n_epochs,  # epochs
         device="cpu",
     )
+
+    # @TODO :: implement model metric logging my modifying the class for pythia this will be perplexity (which is
+    # provided by composer)...
+    # https://docs.mosaicml.com/projects/composer/en/stable/composer_model.html
 
     # launch
     trainer.fit()

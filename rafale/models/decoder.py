@@ -11,17 +11,9 @@ from torch.nn.functional import scaled_dot_product_attention
 
 from composer.models import ComposerModel
 
+
 ###############################################################################
-#                 simple implementation of GPT building blocks                #
-###############################################################################
-
-
-# @TODO kv cache implementation
-# @TODO greedy decoding implementation (put in another file...)
-# @TODO remove mask from everything
-# modify: model class, layer class, attention class, Rope class
-
-
+#                 simple implementation of GPT building
 class NeoXRoPE(nn.Module):
     @classmethod
     def precompute_sin_cos_cache(cls, dim=None, seq_len=None, base=10000):
@@ -73,7 +65,6 @@ class NeoXRoPE(nn.Module):
             cls.rotate_half(k_BHLR) * sin
         )
 
-    # @TODO below not tested yet, but the function call works
     @classmethod
     def apply_rotary_pos_emb_offset(cls, q, k, cos, sin, offset: int = 0):
         """
@@ -524,5 +515,8 @@ class DecoderWrapper(ComposerModel):
 
     def loss(self, outputs, batch):
         targets = batch["labels"]
+
+        if type(outputs) is tuple:
+            outputs, _ = outputs
 
         return self.ce_loss(outputs.view(-1, self.vocab_size), targets.view(-1))

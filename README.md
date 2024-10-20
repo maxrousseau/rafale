@@ -30,11 +30,13 @@ It should be thought of as a starting point for research projects to bootstrap e
 use rafale is to simply fork it and build on top of it for your specific purposes.
 
 For large scale experiments other frameworks/libraries exist:
+- **lingua** (Facebookresearch)
 - torchtitan (Pytorch)
 - torchtune (Pytorch)
 - litGPT (LightningAI)
 - GPT-NeoX (EleutherAI)
 - nanotron (Huggingface)
+- llm-foundry (MosaicML)
 
 ## Usage
 
@@ -52,7 +54,7 @@ python rafale.main -r config.yaml
 | BERT    | ✅          |                |               |
 | RoBERTa | ✅          |                |               |
 | Pythia  | ✅          | ✅             |               |
-| minLSTM/minGRU      |             |                |               |
+| CLIP    |             |                |               |
 
 
 ## Roadmap

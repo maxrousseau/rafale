@@ -1,8 +1,8 @@
 run:
     name: "test-ministories" # name of your experiment, used for checkpointing
-    lr:
-    n_epochs:
-    lr_schedule:
+    lr: 1e-4
+    n_epochs: 1
+    lr_schedule: None
     seed: 42
 
 model:
