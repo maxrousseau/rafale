@@ -1,3 +1,4 @@
+import os
 import argparse
 import yaml
 import time
@@ -9,7 +10,7 @@ import composer
 from composer import Trainer
 from composer.loggers import InMemoryLogger
 
-from rafale.models.decoder import DecoderWrapper
+from rafale.models.decoder import ComposerLM
 from rafale.models.encoder import EncoderWrapper
 from rafale.models.configurations import (
     load_safetensors,
@@ -22,6 +23,9 @@ from rafale.caches import CHECKPOINT_CACHE_DIR
 
 from rafale.datapipe import TinyStoriesCausalNeoX
 from rafale.data_configurations import MINI_TINYSTORIES, TINYSTORIES
+
+
+ENVS_VARS = {key: value for key, value in os.environ.items()}
 
 parser = argparse.ArgumentParser(description="launch a training run")
 
@@ -71,7 +75,7 @@ def main():
     model_config = model_config_dict[model_config_key]
 
     if model_type == "decoder":
-        rafale_model = DecoderWrapper(model_config)
+        rafale_model = ComposerLM(model_config)
     elif model_type == "encoder":
         rafale_model = EncoderWrapper(model_config)
     else:
@@ -80,7 +84,7 @@ def main():
         )
 
     if model_use_pretrained:
-        rafale_model = load_safetensors(rafale_model, model_config)
+        rafale_model.model = load_safetensors(rafale_model.model, model_config)
 
     # build & load the dataloader
     dataset_config = data_config_dict[data_config_key]
@@ -104,6 +108,10 @@ def main():
     # @TODO :: implement model metric logging my modifying the class for pythia this will be perplexity (which is
     # provided by composer)...
     # https://docs.mosaicml.com/projects/composer/en/stable/composer_model.html
+    # - [x] metrics
+    # - [ ] where are the logs ?
+    # - [ ] wandb WANDB_KEY=
+    # - [ ] DEBUG=1 for training runs
 
     # launch
     trainer.fit()

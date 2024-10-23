@@ -6,10 +6,12 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "composer>=0.24.1",
-    "datasets", 
-    "torch>=2.4.0", # should be able to upgrade soon, composer has not yet bumped to torch 2.5.0
+    "datasets",
+    "torch>=2.4.0",
+    # should be able to upgrade soon, composer has not yet bumped to torch 2.5.0
     "safetensors",
     "transformers>=4.44.2",
+    "torchmetrics>=1.4.0.post0",
 ]
 packages = [{include = "rafale"}]
 

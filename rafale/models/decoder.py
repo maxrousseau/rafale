@@ -9,6 +9,10 @@ import torch.nn.functional as F
 
 from torch.nn.functional import scaled_dot_product_attention
 
+from torchmetrics import Metric
+from torchmetrics.collections import MetricCollection
+
+from composer.metrics import LossMetric, LanguagePerplexity
 from composer.models import ComposerModel
 
 
@@ -407,7 +411,7 @@ class DecoderBlockKVcache(DecoderBlock):
         return out_BLD, layer_kv_cache
 
 
-class DecoderWrapper(ComposerModel):
+class DecoderWrapper(nn.Module):
     """Full model wrapper for causal language modelling."""
 
     def __init__(self, config):
@@ -435,8 +439,6 @@ class DecoderWrapper(ComposerModel):
         self.rotary_pct = 0.25
 
         self.vocab_size = config.vocab_size
-
-        self.ce_loss = nn.CrossEntropyLoss()
 
     def setup_caches(self):
         head_dim = self.config.embed_dim // self.config.num_heads
@@ -488,9 +490,6 @@ class DecoderWrapper(ComposerModel):
 
         x = self.token_embeddings(idx)
 
-        # @TODO :: does not handle KV for now... @HERE figure this out next and try a simple fwd pass with and without
-        # pastKV when self.config.use_cache is True
-
         if self.config.use_cache and past_kv_cache is None:
             past_kv_cache = [None] * self.config.num_blocks
 
@@ -513,10 +512,51 @@ class DecoderWrapper(ComposerModel):
 
         return logits, kv_cache_list
 
+
+class ComposerLM(ComposerModel):
+    """wrapper with nice properties for simple training and evaluation"""
+
+    def __init__(self, config):
+        "docstring"
+        super().__init__()
+        self.model = DecoderWrapper(config)
+        self.ce_loss = nn.CrossEntropyLoss()
+        self.train_metrics = MetricCollection(
+            [LossMetric(self.ce_loss), LanguagePerplexity()]
+        )
+        self.eval_metrics = MetricCollection(
+            [LossMetric(self.ce_loss), LanguagePerplexity()]
+        )
+
+    def forward(self, batch):  # batch is the output of the dataloader
+        """batch is a dict with "input_ids" key, model also takes past_kv"""
+        # specify how batches are passed through the model
+        return self.model(batch)
+
+    def eval_forward(self, batch, outputs=False):
+        if outputs:
+            if type(outputs) is tuple:
+                outputs, _ = outputs
+            return outputs
+
+        outputs = self.model(batch)
+        if type(outputs) is tuple:
+            outputs, _ = outputs
+
+        return outputs
+
+    def update_metric(self, batch, outputs, metric) -> None:
+        targets = batch["labels"]
+        metric.update(outputs.view(-1, self.model.vocab_size), targets.view(-1))
+
+    def get_metrics(self, is_train=False) -> dict[str, Metric]:
+        # defines which metrics to use in each phase of training
+        return self.train_metrics if is_train else self.eval_metrics
+
     def loss(self, outputs, batch):
         targets = batch["labels"]
 
         if type(outputs) is tuple:
             outputs, _ = outputs
 
-        return self.ce_loss(outputs.view(-1, self.vocab_size), targets.view(-1))
+        return self.ce_loss(outputs.view(-1, self.model.vocab_size), targets.view(-1))
