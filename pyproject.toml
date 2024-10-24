@@ -12,6 +12,8 @@ dependencies = [
     "safetensors",
     "transformers>=4.44.2",
     "torchmetrics>=1.4.0.post0",
+    "wandb>=0.18.5",
+    "schedulefree>=1.2.7",
 ]
 packages = [{include = "rafale"}]
 

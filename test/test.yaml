@@ -4,6 +4,7 @@ run:
     n_epochs: 1
     lr_schedule: None
     seed: 42
+    optimizer: "AdamW" # @TODO :: not yet implemented, also try to implement support for schedulefree optimizer
 
 model:
     config: "pythia14m" # config key
@@ -13,5 +14,13 @@ model:
 data:
     pipeline: "tinystories_neox" # the preprocessing/tokenization pipeline
     config: "mini_tinystories" # data parameters BS, seq_len, etc.
+
+logging:
+    use_wandb: True
+    use_file: False
+    eval_interval: "50ba"
+    log_dir: "./run_logs"
+    checkpoint_dir: "./checkpoints"
+
 
 # we want data and model configurations to be in files rather than in yaml, leave training hyperparams to yaml config only

@@ -8,7 +8,7 @@ import torch.utils.data
 
 import composer
 from composer import Trainer
-from composer.loggers import InMemoryLogger
+from composer.loggers import InMemoryLogger, WandBLogger, FileLogger
 
 from rafale.models.decoder import ComposerLM
 from rafale.models.encoder import EncoderWrapper
@@ -92,7 +92,10 @@ def main():
     dataloaders = data_pipeline()
 
     # setup logging
-    logger_for_baseline = InMemoryLogger()
+    # mem_logger = InMemoryLogger()
+    # @TODO :: add some logging options in the yaml
+    wandb_logger = WandBLogger(project="rafale", name=run_name)
+    # file_logger = FileLogger(filename=f"{run_name}-{time}".txt)
 
     # build trainer
     trainer = Trainer(
@@ -100,17 +103,18 @@ def main():
         seed=run_seed,
         train_dataloader=dataloaders["train"],
         eval_dataloader=dataloaders["test"],
-        optimizers=torch.optim.Adam(rafale_model.parameters(), lr=run_lr),
-        max_duration=run_n_epochs,  # epochs
+        optimizers=torch.optim.AdamW(rafale_model.parameters(), lr=run_lr),
+        max_duration=run_n_epochs,  # num epochs
+        eval_interval="50ba",  # default is 1ep !
         device="cpu",
+        loggers=[wandb_logger],
     )
 
     # @TODO :: implement model metric logging my modifying the class for pythia this will be perplexity (which is
     # provided by composer)...
     # https://docs.mosaicml.com/projects/composer/en/stable/composer_model.html
     # - [x] metrics
-    # - [ ] where are the logs ?
-    # - [ ] wandb WANDB_KEY=
+    # - [x] where are the logs ?
     # - [ ] DEBUG=1 for training runs
 
     # launch
