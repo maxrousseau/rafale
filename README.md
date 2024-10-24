@@ -92,12 +92,9 @@ cleanup and additional features
 + [ ] multimodality CLIP
 
 Datapipelines
-1) [x] tokenize
-2) [x] concat and split w/ block size (pad w/ collator)
-3) [x] save to disk {source}_{tokname}_bs{int}_len{int}
-3) [x] data_collator: *next* pad (if desired), label shift right and return torch tensor # HF: does this in the model...
-4) [ ] test with model training...
-
-
-@TODO :: tiny stories but for MLM also...
-```
+1. [x] tokenize
+2. [x] concat and split w/ block size (pad w/ collator)
+3. [x] save to disk {source}_{tokname}_bs{int}_len{int}
+4. [x] data_collator: *next* pad (if desired), label shift right and return torch tensor # HF: does this in the model...
+5. [ ] test with model training
+6. [ ] tiny stories but for MLM also
