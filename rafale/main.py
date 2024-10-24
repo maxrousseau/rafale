@@ -116,6 +116,7 @@ def main():
     # - [x] metrics
     # - [x] where are the logs ?
     # - [ ] DEBUG=1 for training runs
+    # - [ ] lm-eval-harness integration
 
     # launch
     trainer.fit()
