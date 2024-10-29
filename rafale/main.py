@@ -108,6 +108,7 @@ def main():
         eval_interval="50ba",  # default is 1ep !
         device="cpu",
         loggers=[wandb_logger],
+        # precision="amp_fp16",
     )
 
     # @TODO :: implement model metric logging my modifying the class for pythia this will be perplexity (which is
