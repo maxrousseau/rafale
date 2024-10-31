@@ -96,6 +96,9 @@ def main():
     # @TODO :: add some logging options in the yaml
     wandb_logger = WandBLogger(project="rafale", name=run_name)
     # file_logger = FileLogger(filename=f"{run_name}-{time}".txt)
+    device = "gpu" if torch.cuda.is_available() else "cpu" # select the device
+    print(device)
+    assert device == "gpu"
 
     # build trainer
     trainer = Trainer(
@@ -106,7 +109,7 @@ def main():
         optimizers=torch.optim.AdamW(rafale_model.parameters(), lr=run_lr),
         max_duration=run_n_epochs,  # num epochs
         eval_interval="50ba",  # default is 1ep !
-        device="cpu",
+        device=device,
         loggers=[wandb_logger],
         # precision="amp_fp16",
     )

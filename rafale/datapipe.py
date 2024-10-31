@@ -54,7 +54,7 @@ class DataPipeline(ABC):
         try:
             self.dataset = DatasetDict.load_from_disk(self.dataset_path)
         except:
-            raise OSError(f"Wrong dataset file and/or path configuration!{self.path}")
+            raise OSError(f"Wrong dataset file and/or path configuration!{self.dataset_path}")
 
     @abstractmethod
     def _prepare(self):

@@ -38,13 +38,26 @@ For large scale experiments other frameworks/libraries exist:
 - nanotron (Huggingface)
 - llm-foundry (MosaicML)
 
-## Usage
+## Installation & Usage
+
+Setup with ```uv``` (install uv link).
+```sh
+git clone <url>
+cd rafale
+uv venv
+uv pip install -r cuda-requirements.txt (or cpu-requirements.txt)
+```
+
+Launch a run with a configuration.
 
 ```sh
-
 python rafale.main -r config.yaml
 
 ```
+
+## Docs
+
+Append this file ```rafale_docprompt.txt``` to your favorite LLM and ask away!
 
 ## Supported models
 
@@ -62,9 +75,10 @@ python rafale.main -r config.yaml
 v0.1 - MVP
 - [x] single entrypoint CLI
 - [ ] simple deploy/build
-  - [x] CPU macos build - Ok
+  - [x] CPU macos build - Ok, uv run works with this
   - [ ] SLURM compute-canada - TBD
-  - [-] local linux machine - setup with nvidia container
+  - [ ] local linux machine - for now uv
+  - NOTE: because uv still does not fully play well with pytorch recommend semi-manual setup*
 - [ ] load weights from safetensors and include it in the config (BERT/RoBERTa and Pythia)
   - [x] pythia
   - [ ] BERT/RoBERTa (need to move from HF to safetensors)
@@ -99,5 +113,5 @@ Datapipelines
 2. [x] concat and split w/ block size (pad w/ collator)
 3. [x] save to disk {source}_{tokname}_bs{int}_len{int}
 4. [x] data_collator: *next* pad (if desired), label shift right and return torch tensor # HF: does this in the model...
-5. [ ] test with model training
+5. [x] test with model training
 6. [ ] tiny stories but for MLM also
