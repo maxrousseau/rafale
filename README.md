@@ -61,6 +61,10 @@ python rafale.main -r config.yaml
 
 v0.1 - MVP
 - [x] single entrypoint CLI
+- [ ] simple deploy/build
+  - [x] CPU macos build - Ok
+  - [ ] SLURM compute-canada - TBD
+  - [-] local linux machine - setup with nvidia container
 - [ ] load weights from safetensors and include it in the config (BERT/RoBERTa and Pythia)
   - [x] pythia
   - [ ] BERT/RoBERTa (need to move from HF to safetensors)
@@ -78,7 +82,6 @@ v0.1 - MVP
 - [-] ```tests``` for pythia and bert models on tinystories
 - [x] ```main.py``` handles both training and evaluation (together or separately)
 - [ ]  *lm-eval-harness* integration guide:  https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/interface.md#external-library-usage
-
 - [-] Mosaic Composer/Trainer (see lightning-fabric simple trainer example and start from there)
   + [ ] bf16/fp16, gradient clipping, and gradient accumulation
   + [x] building blocks are nn.Modules, specific models are ComposerModel classes with methods to load safetensor weights
