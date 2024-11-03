@@ -77,8 +77,8 @@ v0.1 - MVP
 - [ ] simple deploy/build
   - [x] CPU macos build - Ok, uv run works with this
   - [ ] SLURM compute-canada - TBD
-  - [ ] local linux machine - for now uv
-  - NOTE: because uv still does not fully play well with pytorch recommend semi-manual setup*
+  - [ ] local linux machine - for now uv for venv + requirements.txt
+    - NOTE: because uv still does not fully play well with pytorch recommend semi-manual setup*
 - [ ] load weights from safetensors and include it in the config (BERT/RoBERTa and Pythia)
   - [x] pythia
   - [ ] BERT/RoBERTa (need to move from HF to safetensors)
@@ -87,7 +87,7 @@ v0.1 - MVP
 - [x] Pythia KV-cache implementation
 - [x] greedy generation
 - [ ] integration with lm-eval-harness
-- [ ] clean up test suite*
+- [ ] clean up test suite
 - [ ] datapipes for CLM and MLM
   - local dataloader for now
   - [x] CLM tinystories

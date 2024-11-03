@@ -20,7 +20,7 @@ from composer.models import ComposerModel
 #                 simple implementation of GPT building
 class NeoXRoPE(nn.Module):
     @classmethod
-    def precompute_sin_cos_cache(cls, dim=None, seq_len=None, base=10000):
+    def precompute_sin_cos_cache(cls, dim=None, seq_len=None, base=10000, device=None):
         """Computes the cos and sin angles to be applied to the token vectors.
 
         We begin by computing thetas (freqs) across each dimension pair (P=D/2) for the whole sequence length (L).
