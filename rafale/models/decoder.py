@@ -65,6 +65,11 @@ class NeoXRoPE(nn.Module):
     def apply_rotary_pos_emb(cls, q_BHLR, k_BHLR, cos, sin):
         """Applies the rotation to the input queries and key features."""
 
+        tensor_device = q_BHLR.get_device()
+
+        cos = cos.to(device=tensor_device)
+        sin = sin.to(device=tensor_device)
+
         return (q_BHLR * cos) + (cls.rotate_half(q_BHLR) * sin), (k_BHLR * cos) + (
             cls.rotate_half(k_BHLR) * sin
         )
@@ -79,6 +84,11 @@ class NeoXRoPE(nn.Module):
             cos[:, :, offset : q.shape[2] + offset, :],
             sin[:, :, offset : q.shape[2] + offset, :],
         )
+
+        tensor_device = q.get_device()
+
+        cos = cos.to(device=tensor_device)
+        sin = sin.to(device=tensor_device)
 
         return (q * cos) + (cls.rotate_half(q) * sin), (k * cos) + (
             cls.rotate_half(k) * sin
@@ -287,6 +297,15 @@ class DecoderAttentionRotaryKVCache(DecoderAttentionRotary):
         # kv_cache = torch.stack((k_BHLd, v_BHLd))
         kv_cache = (k_BHLd, v_BHLd)  # let's keep them as a list of tuples
         #  ####################################################################
+
+        # print(f"key device {k_BHLd.get_device()}")
+        # print(f"query device {q_BHLd.get_device()}")
+        # print(f"value device {v_BHLd.get_device()}")
+        # print(f"causal mask device {causal_mask.get_device()}")
+
+        tensor_device = q_BHLd.get_device()
+        if causal_mask.get_device() != tensor_device:
+            causal_mask = causal_mask.to(device=tensor_device)
 
         # compute attention here
         attn_out_BHLd = scaled_dot_product_attention(
