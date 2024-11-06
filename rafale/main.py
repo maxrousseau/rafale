@@ -25,7 +25,7 @@ from rafale.datapipe import TinyStoriesCausalNeoX
 from rafale.data_configurations import MINI_TINYSTORIES, TINYSTORIES
 
 
-ENVS_VARS = {key: value for key, value in os.environ.items()}
+ENV_VARS = {key: value for key, value in os.environ.items()}
 
 parser = argparse.ArgumentParser(description="launch a training run")
 
@@ -96,24 +96,59 @@ def main():
     # @TODO :: add some logging options in the yaml
     wandb_logger = WandBLogger(project="rafale", name=run_name)
     # file_logger = FileLogger(filename=f"{run_name}-{time}".txt)
-    device = "gpu" if torch.cuda.is_available() else "cpu"  # select the device
-    print(device)
-    assert device == "gpu"
 
-    # build trainer
-    trainer = Trainer(
-        model=rafale_model,
-        seed=run_seed,
-        train_dataloader=dataloaders["train"],
-        eval_dataloader=dataloaders["test"],
-        optimizers=torch.optim.AdamW(rafale_model.parameters(), lr=run_lr),
-        max_duration=run_n_epochs,  # num epochs
-        eval_interval="50ba",  # default is 1ep !
-        device=device,
-        loggers=[wandb_logger],
-        precision="amp_fp16",
-        progress_bar=True,
-    )
+    # get gpus if possible and set precision to fp16 if possible
+    device = "gpu" if torch.cuda.is_available() else "cpu"  # select the device
+    if device == "gpu":
+        run_precision = "amp_fp16"
+    else:
+        run_precision = "fp32"
+
+    if "DEBUG" in ENV_VARS.keys() and ENV_VARS["DEBUG"] == "1":
+        from torch.utils.data import Subset, DataLoader, default_collate
+        from datasets import Dataset
+
+        # single batch, same for train and test 10 epochs
+        bs = 4
+        debug_batch = next(iter(dataloaders["train"]))
+        debug_batch = Dataset.from_dict(
+            {k: v[:bs] for k, v in debug_batch.items()}
+        ).with_format("torch")
+        debug_batch = DataLoader(
+            debug_batch,
+            batch_size=bs,
+            shuffle=False,
+            collate_fn=default_collate,
+        )
+
+        trainer = Trainer(
+            model=rafale_model,
+            seed=run_seed,
+            train_dataloader=debug_batch,
+            eval_dataloader=debug_batch,
+            optimizers=torch.optim.AdamW(rafale_model.parameters(), lr=1e-4),
+            max_duration=10,  # num epochs
+            device=device,
+            loggers=None,
+            precision=run_precision,
+            progress_bar=True,
+        )
+
+    else:
+        # build trainer
+        trainer = Trainer(
+            model=rafale_model,
+            seed=run_seed,
+            train_dataloader=dataloaders["train"],
+            eval_dataloader=dataloaders["test"],
+            optimizers=torch.optim.AdamW(rafale_model.parameters(), lr=run_lr),
+            max_duration=run_n_epochs,  # num epochs
+            eval_interval="50ba",  # default is 1ep !
+            device=device,
+            loggers=[wandb_logger],
+            precision=run_precision,
+            progress_bar=True,
+        )
 
     # @TODO :: implement model metric logging my modifying the class for pythia this will be perplexity (which is
     # provided by composer)...
