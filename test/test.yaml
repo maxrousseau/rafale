@@ -5,6 +5,8 @@ run:
     lr_schedule: None
     seed: 42
     optimizer: "AdamW" # @TODO :: not yet implemented, also try to implement support for schedulefree optimizer
+    eval_interval: "50ba"
+
 
 model:
     config: "pythia14m" # config key
