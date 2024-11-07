@@ -66,18 +66,18 @@ Append this file ```rafale_docprompt.txt``` to your favorite LLM and ask away!
 |:------------|:------------|:---------------|:--------------|
 | BERT        | ✅          |                |               |
 | RoBERTa     | ✅          |                |               |
-| Pythia      | ✅          | ✅             | 🚧            |
+| Pythia      | ✅          | ✅             | ✅           |
 | CLIP/SigLIP | ⏳          |                |               |
 
 
 ## Roadmap
 
-v0.1 - MVP
+v1.0 - MVP
 - [x] single entrypoint CLI
 - [ ] simple deploy/build
   - [x] CPU macos build - Ok, uv run works with this
   - [ ] SLURM compute-canada - TBD
-  - [ ] local linux machine - for now uv for venv + requirements.txt
+  - [x] local linux machine - for now uv for venv + requirements.txt
     - NOTE: because uv still does not fully play well with pytorch recommend semi-manual setup*
 - [ ] load weights from safetensors and include it in the config (BERT/RoBERTa and Pythia)
   - [x] pythia
@@ -97,13 +97,17 @@ v0.1 - MVP
 - [x] ```main.py``` handles both training and evaluation (together or separately)
 - [ ]  *lm-eval-harness* integration guide:  https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/interface.md#external-library-usage
 - [-] Mosaic Composer/Trainer (see lightning-fabric simple trainer example and start from there)
-  + [ ] bf16/fp16, gradient clipping, and gradient accumulation
+  + [x] fp16
+  + [ ] gradient clipping
+  + [ ] gradient accumulation
   + [x] building blocks are nn.Modules, specific models are ComposerModel classes with methods to load safetensor weights
     automatically (keep in a single separate file for each model)
+  + [x] set DEBUG=1 for 1 batch sanity check before launching a run
 
 cleanup and additional features
 + [ ] move the testing in the notebook to a debug file in the modeling folder
 + [ ] optimizations : flash attn2, xformers layer_norm (triton) or RMSNorm, xformers fused_linear_layer
++ [ ] try out schedulefree, SOAP, and other optimizers
 + [ ] RMSNorm
 + [ ] **layerwise decay** for fine-tuning (https://kozodoi.me/blog/20220329/discriminative-lr)
 + [ ] multimodality CLIP
