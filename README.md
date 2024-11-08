@@ -40,19 +40,26 @@ For large scale experiments other frameworks/libraries exist:
 
 ## Installation & Usage
 
-Setup with ```uv``` (install uv link).
+Setup with ```uv``` ([install uv](https://github.com/astral-sh/uv)).
 ```sh
-git clone <url>
+git clone <repo url>
 cd rafale
 uv venv
+. .venv/bin/activate
 uv pip install -r cuda-requirements.txt (or cpu-requirements.txt)
+uv pip install -e .
+```
+
+Prepare a dataset
+
+```sh
+python rafale/main -r my_config.yaml
 ```
 
 Launch a run with a configuration.
 
 ```sh
-python rafale.main -r config.yaml
-
+python rafale/main -r my_config.yaml
 ```
 
 ## Docs
@@ -72,7 +79,11 @@ Append this file ```rafale_docprompt.txt``` to your favorite LLM and ask away!
 
 ## Roadmap
 
-v1.0 - MVP
+<details>
+  <summary>v0.1</summary>
+
+
+### v0.1 - initial release
 - [x] single entrypoint CLI
 - [ ] simple deploy/build
   - [x] CPU macos build - Ok, uv run works with this
@@ -86,31 +97,22 @@ v1.0 - MVP
     - [ ] Classification
 - [x] Pythia KV-cache implementation
 - [x] greedy generation
-- [ ] integration with lm-eval-harness
 - [ ] clean up test suite
 - [ ] datapipes for CLM and MLM
   - local dataloader for now
   - [x] CLM tinystories
   - [ ] MLM tinystories
   - [ ] Imdb classification
-- [-] ```tests``` for pythia and bert models on tinystories
+- [ ] ```tests``` for pythia and bert models on tinystories
 - [x] ```main.py``` handles both training and evaluation (together or separately)
 - [ ]  *lm-eval-harness* integration guide:  https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/interface.md#external-library-usage
-- [-] Mosaic Composer/Trainer (see lightning-fabric simple trainer example and start from there)
+- [ ] Mosaic Composer/Trainer (see lightning-fabric simple trainer example and start from there)
   + [x] fp16
   + [ ] gradient clipping
-  + [ ] gradient accumulation
+  + [x] gradient accumulation (automatically handled by composer)
   + [x] building blocks are nn.Modules, specific models are ComposerModel classes with methods to load safetensor weights
     automatically (keep in a single separate file for each model)
   + [x] set DEBUG=1 for 1 batch sanity check before launching a run
-
-cleanup and additional features
-+ [ ] move the testing in the notebook to a debug file in the modeling folder
-+ [ ] optimizations : flash attn2, xformers layer_norm (triton) or RMSNorm, xformers fused_linear_layer
-+ [ ] try out schedulefree, SOAP, and other optimizers
-+ [ ] RMSNorm
-+ [ ] **layerwise decay** for fine-tuning (https://kozodoi.me/blog/20220329/discriminative-lr)
-+ [ ] multimodality CLIP
 
 Datapipelines
 1. [x] tokenize
@@ -119,3 +121,16 @@ Datapipelines
 4. [x] data_collator: *next* pad (if desired), label shift right and return torch tensor # HF: does this in the model...
 5. [x] test with model training
 6. [ ] tiny stories but for MLM also
+</details>
+
+</details>
+  <summary>v1.0</summary>
+### path to v1.0
+cleanup and additional features
++ [ ] move the testing in the notebook to a debug file in the modeling folder
++ [ ] optimizations : flash attn2, xformers layer_norm (triton) or RMSNorm, xformers fused_linear_layer
++ [ ] try out schedulefree, SOAP, and other optimizers
++ [ ] **layerwise decay** for fine-tuning (https://kozodoi.me/blog/20220329/discriminative-lr)
++ [ ] multimodality CLIP
++ [ ] integration with lm-eval-harness
+</details>

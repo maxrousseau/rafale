@@ -35,15 +35,17 @@ class DataPipeline(ABC):
         self.name: str = kwargs["name"]
         self.tokenizer_name: str = kwargs["tokenizer_name"]
         self.is_prepared: bool = kwargs["is_prepared"]
-        self.dataset_path: str = kwargs["dataset_path"]
+        self.dataset_path: str = os.path.expanduser(kwargs["dataset_path"])
 
         self.max_sequence_length: int = kwargs["max_sequence_length"]
-        self.batch_size: int = kwargs["batch_size"]
+        self.train_batch_size: int = kwargs["train_batch_size"]
+        self.eval_batch_size: int = kwargs["eval_batch_size"]
         self.pad_inputs: bool = kwargs["pad_inputs"]
         self.pad_token_id: int = kwargs["pad_token_id"]
         self.input_id_key: str = kwargs["input_id_key"]
         self.shuffle_train: bool = kwargs["shuffle_train"]
 
+        self.num_processes: int = kwargs["num_processes"]
         self.tokenizer = Tokenizer.from_pretrained(kwargs["tokenizer_path"])
 
         self.data_collator = None
@@ -54,7 +56,13 @@ class DataPipeline(ABC):
         try:
             self.dataset = DatasetDict.load_from_disk(self.dataset_path)
         except:
-            raise OSError(f"Wrong dataset file and/or path configuration!{self.dataset_path}")
+            pass
+        try:
+            self.dataset = load_dataset(self.dataset_path)
+        except:
+            raise OSError(
+                f"Wrong dataset file and/or path configuration! path: {self.dataset_path}"
+            )
 
     @abstractmethod
     def _prepare(self):
@@ -65,7 +73,7 @@ class DataPipeline(ABC):
 
     def _check_path(self):
         """make sure that the dataset has not already been parsed at location"""
-        output_path = f"{self.name}_{self.tokenizer_name}_bs{self.batch_size}_len{self.max_sequence_length}"
+        output_path = f"{self.name}_{self.tokenizer_name}_bs{self.train_batch_size}_len{self.max_sequence_length}"
 
         assert DATA_CACHE_DIR[-1] == "/"
 
@@ -78,7 +86,7 @@ class DataPipeline(ABC):
 
         if os.path.isdir(save_path):
             warnings.warn(
-                f"Dataset already exists at location:\n\t {save_path} \n ABORTING PREPARATION, USING CbACHED DATASET!"
+                f"Dataset already exists at location:\n\t {save_path} \n ABORTING PREPARATION, USING CACHED DATASET!"
             )
 
             self.is_prepared = True
@@ -99,8 +107,10 @@ class DataPipeline(ABC):
             for subset in self.dataset:
                 if subset == "train":
                     shuffle = self.shuffle_train
+                    batch_size = self.train_batch_size
                 else:
                     shuffle = False
+                    batch_size = self.eval_batch_size
 
                 # if the data is not ready to be passed to the dataloader
                 if not self.is_prepared:
@@ -113,12 +123,11 @@ class DataPipeline(ABC):
                 self.dataloaders[subset] = DataLoader(
                     self.dataset[subset],
                     collate_fn=self.data_collator,
-                    batch_size=self.batch_size,
+                    batch_size=batch_size,
                 )
                 print(f"✅ Dataloader ready for subset {subset}.")
 
             if not self.is_prepared:
-                print(self.dataset)
                 self.dataset.save_to_disk(cache_dataset_path)
                 print(f"✅ Saved prepared dataset at {cache_dataset_path}.")
         else:
@@ -297,6 +306,7 @@ class TinyStoriesCausalNeoX(DataPipeline):
         data = data.map(
             lambda example: self._tokenize(example, self.tokenizer),
             remove_columns=data.column_names,
+            num_proc=self.num_processes,
         )
 
         data = data.map(
@@ -304,6 +314,7 @@ class TinyStoriesCausalNeoX(DataPipeline):
                 example, block_size=self.max_sequence_length
             ),
             batched=True,
+            num_proc=self.num_processes,
         )
 
         return data

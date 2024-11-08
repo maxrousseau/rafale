@@ -16,7 +16,22 @@ MINI_TINYSTORIES = {
     "is_prepared": False,
 }
 
-TINYSTORIES = {}
+TINYSTORIES = {
+    "name": "tinystories",
+    "num_processes": 8,
+    "tokenizer_name": "neox",
+    "is_prepared": False,
+    "input_id_key": "input_ids",
+    "train_batch_size": 1024,
+    "eval_batch_size": 16,
+    "shuffle_train": False,
+    "dataset_path": "~/code/data/TinyStories",
+    "tokenizer_path": "EleutherAI/pythia-14m",
+    "max_sequence_length": 512,
+    "pad_token_id": -100,
+    "pad_inputs": True,
+    "is_prepared": False,
+}
 
 MINIPILE = {}
 
