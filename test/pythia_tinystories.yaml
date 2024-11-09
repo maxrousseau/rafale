@@ -1,0 +1,43 @@
+run:
+    name: "pythia14m-tinystories" # name of your experiment, used for checkpointing
+    seed: 42
+    n_epochs: 1
+    max_lr: 6e-04
+    warmup_pct: 0.01
+    schedule: "cosine-warmup" # linear, linear-warmup, cosine, cosine-warmup
+    optimizer: "AdamW"
+    eval_interval: "50ba"
+    clip_type: "norm"
+    clip_value: 1.0
+    device_bs: "auto"
+    save_interval: "200ba"
+
+model:
+    config: "pythia14m" # config key
+    type: "decoder"
+    use_pretrained: True
+
+data:
+    pipeline: "tinystories_neox" # the preprocessing/tokenization pipeline
+    config:
+        name: "tinystories"
+        num_processes: 8
+        tokenizer_name: "neox"
+        is_prepared: False
+        input_id_key: "input_ids"
+        train_batch_size: 1024
+        eval_batch_size: 16
+        shuffle_train: False
+        dataset_path: "~/code/data/TinyStories"
+        tokenizer_path: "EleutherAI/pythia-14m"
+        max_sequence_length: 512
+        pad_token_id: -100
+        pad_inputs: True
+        is_prepared: False
+
+logging: # @TODO :: not implemented
+    use_wandb: True
+    use_file: False
+    eval_interval: "10ba"
+    log_dir: "./run_logs"
+    checkpoint_dir: "./checkpoints"

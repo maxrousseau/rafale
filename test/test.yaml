@@ -1,0 +1,42 @@
+# we want data and model configurations to be in files rather than in yaml, leave training hyperparams to yaml config only
+
+run:
+    name: "test-ministories" # name of your experiment, used for checkpointing
+    seed: 42
+    n_epochs: 1
+    max_lr: 3e-04
+    warmup_pct: 0.01
+    schedule: "cosine-warmup" # linear, linear-warmup, cosine, cosine-warmup
+    optimizer: "AdamW"
+    eval_interval: "50ba"
+    clip_type: "norm"
+    clip_value: 1.0
+    device_bs: "auto"
+    save_interval: "1ep"
+
+model:
+    config: "pythia14m" # config key
+    type: "decoder"
+    use_pretrained: True
+
+data:
+    pipeline: "tinystories_neox" # the preprocessing/tokenization pipeline
+    config:
+        name: "tinystories_testing"
+        num_processes: 1
+        tokenizer_name: "neox"
+        is_prepared: False
+        input_id_key: "input_ids"
+        train_batch_size: 16
+        eval_batch_size: 16
+        shuffle_train: False
+        dataset_path: "~/code/data/micro_tinystories"
+        tokenizer_path: "EleutherAI/pythia-14m"
+        max_sequence_length: 128
+        pad_token_id: -100
+        pad_inputs: True
+        is_prepared: False
+
+logging:
+    use_wandb: True
+    use_file: False

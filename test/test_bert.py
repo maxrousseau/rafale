@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import os
 
 from datapipe import WikiMLMPipe
@@ -122,3 +123,7 @@ def test_bert():
             atol=5e-4,
             rtol=5e-4,
         )
+
+
+if __name__ == "__main__":
+    main()

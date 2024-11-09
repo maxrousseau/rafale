@@ -1,9 +1,0 @@
-run:
-    name: "test"
-
-model:
-    name: "test-model"
-    bin: "./"
-
-data:
-    training_path: "training_path"
