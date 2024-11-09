@@ -51,10 +51,6 @@ model_config_dict = {
     "roberta": RobertaConfig,
 }
 
-data_config_dict = {
-    "mini_tinystories": MINI_TINYSTORIES,
-    "tinystories": TINYSTORIES,
-}
 
 data_pipeline_dict = {
     "tinystories_neox": TinyStoriesCausalNeoX,
@@ -93,10 +89,10 @@ def main():
     model_use_pretrained = config["model"]["use_pretrained"]
 
     data_pipeline_key = config["data"]["pipeline"]
-    data_config_key = config["data"]["config"]
+    dataset_config = config["data"]["config"]
+    print(dataset_config)
 
     # DATALOADERS #############################################################
-    dataset_config = data_config_dict[data_config_key]
     data_pipeline = data_pipeline_dict[data_pipeline_key](**dataset_config)
     dataloaders = data_pipeline()
     if "DATA" in ENV_VARS.keys() and ENV_VARS["DATA"] == "1":

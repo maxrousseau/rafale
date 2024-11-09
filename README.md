@@ -29,15 +29,6 @@ learning/research tool. It is **not** a fully fledged library for large scale tr
 It should be thought of as a starting point for research projects to bootstrap experiments on small LMs. The best way to
 use rafale is to simply fork it and build on top of it for your specific purposes.
 
-For large scale experiments other frameworks/libraries exist:
-- **lingua** (Facebookresearch)
-- torchtitan (Pytorch)
-- torchtune (Pytorch)
-- litGPT (LightningAI)
-- GPT-NeoX (EleutherAI)
-- nanotron (Huggingface)
-- llm-foundry (MosaicML)
-
 ## Installation & Usage
 
 Setup with ```uv``` ([install uv](https://github.com/astral-sh/uv)).
@@ -50,21 +41,54 @@ uv pip install -r cuda-requirements.txt (or cpu-requirements.txt)
 uv pip install -e .
 ```
 
-Prepare a dataset
-
-```sh
-python rafale/main -r my_config.yaml
-```
-
 Launch a run with a configuration.
 
 ```sh
-python rafale/main -r my_config.yaml
+python rafale/main -c test/pythia_tinystories.yaml
 ```
 
-## Docs
+What if I just want to prepare my dataset? ```DATA=1``` will run the data preparation and caching pipeline without
+launching the training run.
 
-Append this file ```rafale_docprompt.txt``` to your favorite LLM and ask away!
+```sh
+DATA=1 python rafale/main -c test/pythia_tinystories.yaml
+```
+
+What if I want to test my model to make sure that its learning? ```DEBUG=1``` will run 10 epochs on a single training
+batch (same for train/eval), the model should fit quickly if there are no bugs in the implementation.
+
+```sh
+DEBUG=1 python rafale/main -c test/pythia_tinystories.yaml
+```
+
+
+### Under the hood
+
+The goal of rafale is to provide a single entry point for data preparation and training. You configure the model and
+dataset. Then call the training job.
+
+When calling a run, first we run the datapipepline. If the dataset has already been processed (tokenized, padded,
+chunked, etc.), it will be loaded from the cache (default location is ```~/.rafale_cache```.
+
+#### Adding a new model
+
+To add a new model, you need write a new configuration to ```rafale/models/configurations.py```, and add it's key to
+```model_config_dict``` in ```rafale/main.py```.
+
+Look at the ```ComposerLM``` wrapper class in ```rafale/models/decoder.py``` to check if all your building blocks are
+there. Otherwise you may need to modify/write a new wrapper.
+
+#### Adding a new datapipeline
+
+If the dataset is hosted on huggingface, simply use git lfs to clone the repo locally or use the repo name as the
+dataset path. Same goes for tokenizers since we use their tokenizer implementation.
+
+You will need to add a new datapipeline class in ```rafale/datapipes.py``` where the ```_prepare``` method all data
+preprocessing (tokenization, chunking, truncation, etc.) **EXCEPT** padding. Padding will be performed by the datacollator.
+
+### Docs
+
+Append this file ```rafale_docprompt.txt``` to your favorite LLM and ask away.
 
 ## Supported models
 
@@ -136,3 +160,14 @@ cleanup and additional features
 + [ ] integration with lm-eval-harness
 
 </details>
+
+## I am GPU-rich what do I use?
+
+For large scale experiments other frameworks/libraries exist:
+- **lingua** (Facebookresearch)
+- torchtitan (Pytorch)
+- torchtune (Pytorch)
+- litGPT (LightningAI)
+- GPT-NeoX (EleutherAI)
+- nanotron (Huggingface)
+- llm-foundry (MosaicML)
