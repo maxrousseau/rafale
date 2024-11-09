@@ -69,13 +69,13 @@ dataset. Then call the training job.
 When calling a run, first we run the datapipepline. If the dataset has already been processed (tokenized, padded,
 chunked, etc.), it will be loaded from the cache (default location is ```~/.rafale_cache```.
 
-#### Adding a new model
-
-To add a new model, you need write a new configuration to ```rafale/models/configurations.py```, and add it's key to
-```model_config_dict``` in ```rafale/main.py```.
-
-Look at the ```ComposerLM``` wrapper class in ```rafale/models/decoder.py``` to check if all your building blocks are
-there. Otherwise you may need to modify/write a new wrapper.
+> [!NOTE]
+> #### Adding a new model
+> To add a new model, you need write a new configuration to ```rafale/models/configurations.py```, and add it's key to
+> ```model_config_dict``` in ```rafale/main.py```.
+>
+> Look at the ```ComposerLM``` wrapper class in ```rafale/models/decoder.py``` to check if all your building blocks are
+> there. Otherwise you may need to modify/write a new wrapper.
 
 #### Adding a new datapipeline
 
