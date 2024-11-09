@@ -122,7 +122,7 @@ chunked, etc.), it will be loaded from the cache (default location is ```~/.rafa
 
 ### 📕 Docs
 
-Append this file ```rafale_docprompt.txt``` to your favorite LLM and ask away.
+Append this file ```llm-docprompt.txt``` to your favorite LLM and ask away.
 
 ### 🦾 Supported models
 
@@ -145,8 +145,8 @@ Append this file ```rafale_docprompt.txt``` to your favorite LLM and ask away.
 - [x] single entrypoint CLI
 - [ ] simple deploy/build
   - [x] CPU macos build - Ok, uv run works with this
-  - [ ] SLURM compute-canada - TBD
   - [x] local linux machine - for now uv for venv + requirements.txt
+  - [ ] SLURM compute-canada - TBD
     - NOTE: because uv still does not fully play well with pytorch recommend semi-manual setup*
 - [ ] load weights from safetensors and include it in the config (BERT/RoBERTa and Pythia)
   - [x] pythia
@@ -155,16 +155,13 @@ Append this file ```rafale_docprompt.txt``` to your favorite LLM and ask away.
     - [ ] Classification
 - [x] Pythia KV-cache implementation
 - [x] greedy generation
-- [ ] clean up test suite
 - [ ] datapipes for CLM and MLM
   - local dataloader for now
   - [x] CLM tinystories
   - [ ] MLM tinystories
   - [ ] Imdb classification
-- [ ] ```tests``` for pythia and bert models on tinystories
 - [x] ```main.py``` handles both training and evaluation (together or separately)
-- [ ]  *lm-eval-harness* integration guide:  https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/interface.md#external-library-usage
-- [ ] Mosaic Composer/Trainer
+- [x] Mosaic Composer/Trainer
   + [x] fp16
   + [x] gradient clipping
   + [x] gradient accumulation (automatically handled by composer)
@@ -186,19 +183,20 @@ Datapipelines
 
 ### path to v1.0
 cleanup and additional features
-+ [ ] move the testing in the notebook to a debug file in the modeling folder
-+ [ ] optimizations : flash attn2, xformers layer_norm (triton) or RMSNorm, xformers fused_linear_layer
-+ [ ] try out schedulefree, SOAP, and other optimizers
-+ [ ] **layerwise decay** for fine-tuning (https://kozodoi.me/blog/20220329/discriminative-lr)
-+ [ ] multimodality CLIP
-+ [ ] integration with lm-eval-harness
+- [ ] clean up ```tests``` for pythia and bert models on tinystories
+- [ ] move the testing in the notebook to a debug file in the modeling folder
+- [ ] optimizations : flash attn2, xformers layer_norm (triton) or RMSNorm, xformers fused_linear_layer
+- [ ] try out schedulefree, SOAP, and other optimizers
+- [ ] **layerwise decay** for fine-tuning (https://kozodoi.me/blog/20220329/discriminative-lr)
+- [ ] multimodality CLIP
+- [ ] integration with lm-eval-harness (guide)[https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/interface.md#external-library-usage]
 
 </details>
 
 ## I am GPU-rich what do I use?
 
 For large scale experiments other frameworks/libraries exist:
-- **lingua** (Facebookresearch)
+- lingua (Facebookresearch)
 - torchtitan (Pytorch)
 - torchtune (Pytorch)
 - litGPT (LightningAI)
