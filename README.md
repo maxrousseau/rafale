@@ -89,7 +89,7 @@ chunked, etc.), it will be loaded from the cache (default location is ```~/.rafa
 
 Append this file ```rafale_docprompt.txt``` to your favorite LLM and ask away.
 
-## Supported models
+### 🦾 Supported models
 
 
 | Name        | Implemented | Inference test | Training test |
