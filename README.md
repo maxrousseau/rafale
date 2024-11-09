@@ -76,14 +76,14 @@ chunked, etc.), it will be loaded from the cache (default location is ```~/.rafa
 >
 > Look at the ```ComposerLM``` wrapper class in ```rafale/models/decoder.py``` to check if all your building blocks are
 > there. Otherwise you may need to modify/write a new wrapper.
-
-#### Adding a new datapipeline
-
-If the dataset is hosted on huggingface, simply use git lfs to clone the repo locally or use the repo name as the
-dataset path. Same goes for tokenizers since we use their tokenizer implementation.
-
-You will need to add a new datapipeline class in ```rafale/datapipes.py``` where the ```_prepare``` method all data
-preprocessing (tokenization, chunking, truncation, etc.) **EXCEPT** padding. Padding will be performed by the datacollator.
+>
+> #### Adding a new datapipeline
+>
+> If the dataset is hosted on huggingface, simply use git lfs to clone the repo locally or use the repo name as the
+> dataset path. Same goes for tokenizers since we use their tokenizer implementation.
+>
+> You will need to add a new datapipeline class in ```rafale/datapipes.py``` where the ```_prepare``` method all data
+> preprocessing (tokenization, chunking, truncation, etc.) **EXCEPT** padding. Padding will be performed by the datacollator.
 
 ### 📕 Docs
 
