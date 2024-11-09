@@ -12,16 +12,7 @@ Rafale is a simple and opinionated transformer training CLI.
 
 </div>
 
-
-## Dependencies
-
-Attempting to balance ergonomics and simplicity. This is meant to be easily hackable for research purposes.
-
-```
-torch, composer, datasets, tokenizers
-```
-
-## Purpose
+## 💡Purpose
 
 Rafale provides an opinionated scaffolding for training transformers. It is solely built to be an efficient
 learning/research tool. It is **not** a fully fledged library for large scale training.
@@ -29,40 +20,48 @@ learning/research tool. It is **not** a fully fledged library for large scale tr
 It should be thought of as a starting point for research projects to bootstrap experiments on small LMs. The best way to
 use rafale is to simply fork it and build on top of it for your specific purposes.
 
-## Installation & Usage
+### Core dependencies
+
+Attempting to balance ergonomics and simplicity. This is meant to be easily hackable for research purposes.
+
+```
+torch, composer, datasets, tokenizers
+```
+
+## 🚀 Installation & Usage
 
 Setup with ```uv``` ([install uv](https://github.com/astral-sh/uv)).
 ```sh
-git clone <repo url>
-cd rafale
-uv venv
-. .venv/bin/activate
-uv pip install -r cuda-requirements.txt (or cpu-requirements.txt)
-uv pip install -e .
+$ git clone <repo url>
+$ cd rafale
+$ uv venv
+$ . .venv/bin/activate
+$ uv pip install -r cuda-requirements.txt (or cpu-requirements.txt)
+$ uv pip install -e .
 ```
 
 Launch a run with a configuration.
 
 ```sh
-python rafale/main -c test/pythia_tinystories.yaml
+$ python rafale/main -c test/pythia_tinystories.yaml
 ```
 
 What if I just want to prepare my dataset? ```DATA=1``` will run the data preparation and caching pipeline without
 launching the training run.
 
 ```sh
-DATA=1 python rafale/main -c test/pythia_tinystories.yaml
+$ DATA=1 python rafale/main -c test/pythia_tinystories.yaml
 ```
 
 What if I want to test my model to make sure that its learning? ```DEBUG=1``` will run 10 epochs on a single training
 batch (same for train/eval), the model should fit quickly if there are no bugs in the implementation.
 
 ```sh
-DEBUG=1 python rafale/main -c test/pythia_tinystories.yaml
+$ DEBUG=1 python rafale/main -c test/pythia_tinystories.yaml
 ```
 
 
-### Under the hood
+### 🔧 Under the hood
 
 The goal of rafale is to provide a single entry point for data preparation and training. You configure the model and
 dataset. Then call the training job.
@@ -86,7 +85,7 @@ dataset path. Same goes for tokenizers since we use their tokenizer implementati
 You will need to add a new datapipeline class in ```rafale/datapipes.py``` where the ```_prepare``` method all data
 preprocessing (tokenization, chunking, truncation, etc.) **EXCEPT** padding. Padding will be performed by the datacollator.
 
-### Docs
+### 📕 Docs
 
 Append this file ```rafale_docprompt.txt``` to your favorite LLM and ask away.
 
@@ -101,7 +100,7 @@ Append this file ```rafale_docprompt.txt``` to your favorite LLM and ask away.
 | CLIP/SigLIP | ⏳          |                |               |
 
 
-## Roadmap
+## 🔮 Roadmap
 
 <details>
   <summary>v0.1</summary>
@@ -130,9 +129,9 @@ Append this file ```rafale_docprompt.txt``` to your favorite LLM and ask away.
 - [ ] ```tests``` for pythia and bert models on tinystories
 - [x] ```main.py``` handles both training and evaluation (together or separately)
 - [ ]  *lm-eval-harness* integration guide:  https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/interface.md#external-library-usage
-- [ ] Mosaic Composer/Trainer (see lightning-fabric simple trainer example and start from there)
+- [ ] Mosaic Composer/Trainer
   + [x] fp16
-  + [ ] gradient clipping
+  + [x] gradient clipping
   + [x] gradient accumulation (automatically handled by composer)
   + [x] building blocks are nn.Modules, specific models are ComposerModel classes with methods to load safetensor weights
     automatically (keep in a single separate file for each model)
