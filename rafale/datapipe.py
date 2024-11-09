@@ -53,16 +53,17 @@ class DataPipeline(ABC):
         self.use_cached = False
 
     def _load(self):
+        # either load directly from disk or from an hf dataset repo
         try:
             self.dataset = DatasetDict.load_from_disk(self.dataset_path)
         except:
-            pass
-        try:
-            self.dataset = load_dataset(self.dataset_path)
-        except:
-            raise OSError(
-                f"Wrong dataset file and/or path configuration! path: {self.dataset_path}"
-            )
+            try:
+                self.dataset = load_dataset(self.dataset_path)
+                pass
+            except:
+                raise OSError(
+                    f"Wrong dataset file and/or path configuration! path: {self.dataset_path}"
+                )
 
     @abstractmethod
     def _prepare(self):

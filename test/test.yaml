@@ -11,6 +11,8 @@ run:
     eval_interval: "50ba"
     clip_type: "norm"
     clip_value: 1.0
+    device_bs: "auto"
+    save_interval: "1ep"
 
 model:
     config: "pythia14m" # config key
@@ -28,7 +30,7 @@ data:
         train_batch_size: 16
         eval_batch_size: 16
         shuffle_train: False
-        dataset_path: "~/code/data/TinyStories"
+        dataset_path: "~/code/data/micro_tinystories"
         tokenizer_path: "EleutherAI/pythia-14m"
         max_sequence_length: 128
         pad_token_id: -100

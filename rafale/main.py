@@ -2,6 +2,7 @@ import os
 import argparse
 import yaml
 import time
+from datetime import datetime
 
 import torch
 import torch.utils.data
@@ -27,9 +28,7 @@ from rafale.models.configurations import (
 )
 
 from rafale.caches import CHECKPOINT_CACHE_DIR
-
 from rafale.datapipe import TinyStoriesCausalNeoX
-from rafale.data_configurations import MINI_TINYSTORIES, TINYSTORIES
 
 
 ENV_VARS = {key: value for key, value in os.environ.items()}
@@ -51,7 +50,6 @@ model_config_dict = {
     "roberta": RobertaConfig,
 }
 
-
 data_pipeline_dict = {
     "tinystories_neox": TinyStoriesCausalNeoX,
 }
@@ -65,6 +63,7 @@ def main():
     run_name = config["run"]["name"]
     run_n_epochs = config["run"]["n_epochs"]
     run_seed = config["run"]["seed"]
+    run_save_interval = config["run"]["save_interval"]
 
     run_clip_type = config["run"]["clip_type"]
     run_clip_value = float(config["run"]["clip_value"])
@@ -167,13 +166,22 @@ def main():
         return 0
 
     # TRAIN ###################################################################
+    # training subset must have key "train" then whatever is called the validation subset (i.e. test, val, validation,
+    # eval, etc) as long as there is only 1 other subset, we call it
     dl_keys = list(dataloaders.keys())
     assert "train" in dl_keys
     dl_keys.remove("train")
     assert len(dl_keys) == 1
     eval_subset_key = dl_keys[0]
 
-    print(dataloaders)
+    # get datetime for checkpoint, directories are created by composer
+    now = datetime.now()
+    formatted_date = now.strftime(
+        "%d" + "d" + "%m" + "m" + "%Y" + "y" + "_%H" + "h" + "%M" + "m"
+    )  # Format it as DDdMMmYYYYy_HHhMMm
+    checkpoint_folder = os.path.abspath(
+        os.path.join(CHECKPOINT_CACHE_DIR, f"{run_name}-{formatted_date}/")
+    )
 
     trainer = Trainer(
         model=rafale_model,
@@ -190,10 +198,14 @@ def main():
         progress_bar=True,
         schedulers=run_scheduler,
         algorithms=[gradient_clip],
+        save_folder=checkpoint_folder,
+        save_latest_filename="latest",
+        save_interval=run_save_interval,
     )
 
     # launch
     trainer.fit()
+    print(f"🍻 TRAINING COMPLETE\n💾 CHECKPOINTS SAVED AT LOCATION: {checkpoint_folder}")
 
 
 if __name__ == "__main__":
