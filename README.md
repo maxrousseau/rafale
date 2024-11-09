@@ -123,8 +123,9 @@ Datapipelines
 6. [ ] tiny stories but for MLM also
 </details>
 
-</details>
+<details>
   <summary>v1.0</summary>
+
 ### path to v1.0
 cleanup and additional features
 + [ ] move the testing in the notebook to a debug file in the modeling folder
@@ -133,4 +134,5 @@ cleanup and additional features
 + [ ] **layerwise decay** for fine-tuning (https://kozodoi.me/blog/20220329/discriminative-lr)
 + [ ] multimodality CLIP
 + [ ] integration with lm-eval-harness
+
 </details>
