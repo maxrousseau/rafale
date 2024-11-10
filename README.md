@@ -43,21 +43,21 @@ $ uv pip install -e .
 Launch a run with a configuration.
 
 ```sh
-$ python rafale/main -c test/pythia_tinystories.yaml
+$ python rafale.main -c test/pythia_tinystories.yaml
 ```
 
 What if I just want to prepare my dataset? ```DATA=1``` will run the data preparation and caching pipeline without
 launching the training run.
 
 ```sh
-$ DATA=1 python rafale/main -c test/pythia_tinystories.yaml
+$ DATA=1 python rafale.main -c test/pythia_tinystories.yaml
 ```
 
 What if I want to test my model to make sure that its learning? ```DEBUG=1``` will run 10 epochs on a single training
 batch (same for train/eval), the model should fit quickly if there are no bugs in the implementation.
 
 ```sh
-$ DEBUG=1 python rafale/main -c test/pythia_tinystories.yaml
+$ DEBUG=1 python rafale.main -c test/pythia_tinystories.yaml
 ```
 
 
