@@ -1,11 +1,20 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "rafale"
+authors = [
+		{name = "Maxime Rousseau"}
+]
 version = "0.1"
-description = "opinionated transformer training cli"
+description = "simple transformer training lib"
 readme = "README.md"
-requires-python = "==3.12"
-packages = [{include = "rafale"}]
+requires-python = ">=3.6"
+license = {text = "MIT"}
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[project.urls]
+homepage = "https://github.com/maxrousseau/rafale"
+
+[tool.setuptools.packages.find]
+where = ["rafale"]

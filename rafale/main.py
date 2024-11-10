@@ -89,7 +89,6 @@ def main():
 
     data_pipeline_key = config["data"]["pipeline"]
     dataset_config = config["data"]["config"]
-    print(dataset_config)
 
     # DATALOADERS #############################################################
     data_pipeline = data_pipeline_dict[data_pipeline_key](**dataset_config)
@@ -158,10 +157,13 @@ def main():
             optimizers=torch.optim.AdamW(rafale_model.parameters(), lr=1e-4),
             max_duration=10,  # num epochs
             device=device,
-            loggers=None,
             precision=run_precision,
-            progress_bar=True,
+            progress_bar=False,
+            log_to_console=True,
+            console_log_interval="1ep",
         )
+
+        trainer.fit()
 
         return 0
 
