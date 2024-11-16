@@ -42,6 +42,7 @@ class DataPipeline(ABC):
         self.eval_batch_size: int = kwargs["eval_batch_size"]
         self.pad_inputs: bool = kwargs["pad_inputs"]
         self.pad_token_id: int = kwargs["pad_token_id"]
+
         self.input_id_key: str = kwargs["input_id_key"]
         self.shuffle_train: bool = kwargs["shuffle_train"]
 
@@ -147,6 +148,7 @@ class InferenceDatapipeline:
         if add_eos:
             tokenizer.post_processor = TemplateProcessing(
                 single="<|endoftext|> $A",
+                pair=None,
                 special_tokens=[
                     ("<|endoftext|>", tokenizer.token_to_id("<|endoftext|>")),
                 ],
@@ -172,7 +174,7 @@ class InferenceDatapipeline:
         return tokenized_inputs
 
     def ids_to_str(self, tensor):
-        return ifdp.tokenizer.decode(tensor.squeeze().detach().numpy())
+        return self.tokenizer.decode(tensor.squeeze().detach().numpy())
 
 
 class CausalCollator:
@@ -215,48 +217,43 @@ class MLMCollator:
         pad_inputs: bool = True,
     ):
         """masks some % of tokens for MLM objective"""
-        pass
-
+        raise NotImplementedError
 
 class DefaultCollator:
     def __init__(
         self,
         pad_token_id: int = -100,
         input_id_key: str = "input_ids",
+        label_key: str = "labels",
         pad_inputs: bool = True,
     ):
         """for task data where labels are already set"""
-        pass
+        self.pad_token_id = pad_token_id
+        self.input_id_key = input_id_key
+        self.label_key = label_key
+        self.pad_inputs = pad_inputs
 
+    def __call__(self, features):
+        # Extract the input IDs from the batch
+        input_ids = [torch.tensor(example[self.input_id_key]) for example in features]
+
+        # Pad the inputs if required
+        if self.pad_inputs:
+            input_ids = pad_sequence(
+                input_ids, batch_first=True, padding_value=self.pad_token_id
+            )
+
+        # Set the last token of each label sequence to pad_token_id to ignore loss for the last prediction
+        # shift left the ids
+        labels = [torch.tensor(example[self.label_key]) for example in features]
+
+        return {
+            "input_ids": input_ids,
+            "labels": labels,
+        }
 
 class TinyStoriesCausalNeoX(DataPipeline):
-    """This is sample datapipelin for the TinyStories dataset.
-
-
-    This dataset is prepared for causal language modelling using the gpt neox tokenizer (eleutherai). We
-
-    Usage:
-        ts_dict = {
-            "name": "tinystories_testing",
-            "tokenizer_name": "neox",
-            "is_prepared": False,
-            "input_id_key": "input_ids",
-            "batch_size": 16,
-            "shuffle_train": False,
-            "dataset_path": "~/code/data/micro_tinystories",
-            "tokenizer_path": "EleutherAI/pythia-14m",
-            "max_sequence_length": 128,
-            "pad_token_id": -100,
-            "pad_inputs": True,
-            "is_prepared": False,
-        }
-        ts_dpipe = TinyStoriesCausalNeoX(**ts_dict)
-        dataloaders = ts_causal()
-
-    Args:
-
-    Returns:
-
+    """This is a sample datapipeline for the TinyStories dataset.
     """
 
     def __init__(self, **kwargs):
@@ -271,7 +268,8 @@ class TinyStoriesCausalNeoX(DataPipeline):
     def _tokenizer_templating(self, tokenizer, add_eos=True):
         if add_eos:
             tokenizer.post_processor = TemplateProcessing(
-                single="$A <|endoftext|>",
+                single="<|endoftext|> $A",
+                pair=None,
                 special_tokens=[
                     ("<|endoftext|>", tokenizer.token_to_id("<|endoftext|>")),
                 ],
@@ -299,8 +297,8 @@ class TinyStoriesCausalNeoX(DataPipeline):
         return result
 
     def _prepare(self, data):
-        """"""
-
+        """Preparation by first tokenizing the data, then grouping/chucking the corpus for efficient language modelling.
+        """
         # apply functions above to dataset
         self.tokenizer = self._tokenizer_templating(self.tokenizer)
 
@@ -320,104 +318,57 @@ class TinyStoriesCausalNeoX(DataPipeline):
 
         return data
 
-
-class TinyStoriesMLM(DataPipeline):
-    """ """
-
-    pass
-
-
-class ImdbCLS(DataPipeline):
-    pass
-
-
-'''
-class ImdbClsPipe(DataPipeline):
-    """A pipeline for the imdb dataset for """
+class ImdbClsBERT(DataPipeline):
+    """A pipeline for the imdb dataset for classification."""
 
     def __init__(self, **kwargs):
-        self.path = kwargs["path"]
-        self.name = kwargs["name"] # name
-        self.is_tokenized = kwargs["is_tokenized"]
+        super().__init__(**kwargs)
+        self.label_key = "label"
 
-        self.padding = kwargs["padding"]  # "max_length"
-        self.max_sequence_length = kwargs["max_sequence_length"]  # 512
-
-        self.shuffle_train = kwargs["shuffle_train"] # False
-        self.batch_size = kwargs["batch_size"]
-        self.tokenizer = kwargs["tokenizer"]
-        self.collator_fn = DataCollatorWithPadding(
-            tokenizer=self.tokenizer,
-            padding=self.padding,
-            max_length=self.max_sequence_length,
-            return_tensors='pt'
+        self.data_collator = DefaultCollator(
+            input_id_key=self.input_id_key,
+            label_key=self.label_key,
+            pad_token_id=self.pad_token_id,
+            pad_inputs=True,
         )
 
-        self.data = datasets.DatasetDict.load_from_disk(self.path)
+    def _tokenizer_templating(self, tokenizer, add_eos=True, max_length=None, truncate=False):
+        if add_eos:
+            tokenizer.post_processor = TemplateProcessing(
+                single="[CLS] $A [SEP]",
+                pair=None, # pair="[CLS] $A [SEP] $B:1 [SEP]:1", # not required for binary classification
+                special_tokens=[
+                    ("[CLS]", tokenizer.token_to_id("[CLS]")),
+                    ("[SEP]", tokenizer.token_to_id("[SEP]")),
+                ],
+            )
 
-    def _post_tokenize(self, dataset):
-        return dataset.remove_columns(["text"])
+            return tokenizer
 
     def _tokenize(
         self,
-        examples,
+        example,
+        tokenizer,
+        key="text"
     ):
-        source_tokenized = self.tokenizer(
-            examples["text"],
-            truncation=True,
-            max_length=self.max_sequence_length,
-            return_token_type_ids=True,
-            return_tensors='pt'
+
+        return {
+            self.input_id_key: tokenizer.encode(example[key]).ids,
+            self.label_key: example[self.label_key],
+        }
+
+    def _prepare(self, data):
+        """Tokenize by adding [CLS] and [SEP] tokens at the beginning and end of the text respectively.
+        We also truncate to max length keeping only the first part of the sequence."""
+        self.tokenizer = self._tokenizer_templating(self.tokenizer)
+
+        # Truncation will include the special tokens, so set the true max_length of the model
+        self.tokenizer.enable_truncation(self.max_sequence_length, strategy="only_first")
+
+        data = data.map(
+            lambda example: self._tokenize(example, self.tokenizer),
+            remove_columns=data.column_names,
+            num_proc=self.num_processes,
         )
 
-        batch = {k: v for k, v in source_tokenized.items()}
-
-        return batch
-
-    def _map_tokenize(self, subsets=None):
-        # tokenize
-        print("tokenizing training")
-        self.data["train"] = self.data["train"].map(self._tokenize, batched=True)
-        self.data["train"] = self.data["train"].remove_columns("text")
-
-        print("tokenizing test")
-        self.data["test"] = self.data["test"].map(self._tokenize, batched=True)
-        self.data["test"] = self.data["test"].remove_columns("text")
-
-
-    def _save_tokenized(self):
-        # preprocess
-        self.path += "_tokenized"
-        print(f"saving tokenized data to disk at location : {self.path}")
-        assert os.path.isdir(self.path) == False
-        self.data.save_to_disk(self.path)
-
-    def string_to_tokens(self, input_str):
-        # tokenize
-        tensor = self._tokenize({"text": input_str})
-
-        return self.collator_fn(tensor)
-
-    def __call__(self, subsets = ["train", "test"]):
-        dataloaders = {}
-
-        if self.is_tokenized:
-            print("data tokenized")
-        else:
-            self._map_tokenize()
-            self._save_tokenized()
-
-        for _set in subsets:
-            if _set == "train":
-                shuffle = self.shuffle_train
-            else:
-                shuffle = False
-
-            dataloaders[_set] = DataLoader(
-                        self.data[_set],
-                        collate_fn=self.collator_fn,  # DEBUG
-                        batch_size=self.batch_size,
-                        shuffle=shuffle,  # DEBUG
-                    )
-        return dataloaders
-'''
+        return data

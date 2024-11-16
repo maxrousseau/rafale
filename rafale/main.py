@@ -1,3 +1,4 @@
+from ast import Mod
 import os
 import argparse
 import yaml
@@ -19,41 +20,40 @@ from composer.optim.scheduler import (
 )
 
 from rafale.models.decoder import ComposerLM
-from rafale.models.encoder import EncoderWrapper
+from rafale.models.encoder import ComposerEncoderClassifier, ComposerMLM
 from rafale.models.configurations import (
     load_safetensors,
     Pythia14MConfig,
+    BertTinyConfig,
     BertConfig,
     RobertaConfig,
 )
 
 from rafale.caches import CHECKPOINT_CACHE_DIR
-from rafale.datapipe import TinyStoriesCausalNeoX
-
+from rafale.datapipe import TinyStoriesCausalNeoX, ImdbClsBERT, InferenceDatapipeline
 
 ENV_VARS = {key: value for key, value in os.environ.items()}
 
 parser = argparse.ArgumentParser(description="launch a training run")
 
 parser.add_argument(
-    "-c",
-    "--training_config",
+    "training_config",
     type=str,
     help="path to yaml run configuration file",
-    required=True,
 )
 args = parser.parse_args()
 
 model_config_dict = {
     "pythia14m": Pythia14MConfig,
+    "berttiny": BertTinyConfig,
     "bert": BertConfig,
     "roberta": RobertaConfig,
 }
 
 data_pipeline_dict = {
-    "tinystories_neox": TinyStoriesCausalNeoX,
+    "tinystories_neox" : TinyStoriesCausalNeoX,
+    "imdb_bert" : ImdbClsBERT
 }
-
 
 def main():
     # CONFIG ##################################################################
@@ -74,6 +74,7 @@ def main():
     run_schedule_type = config["run"]["schedule"]
     run_max_lr = float(config["run"]["max_lr"])  # learning rate
     run_warmup_pct = float(config["run"]["warmup_pct"])
+
     if run_schedule_type == "cosine-warmup":
         run_scheduler = CosineAnnealingWithWarmupScheduler(
             t_warmup=Time(run_warmup_pct, "dur"), alpha_f=0.1
@@ -86,6 +87,18 @@ def main():
     model_config_key = config["model"]["config"]
     model_type = config["model"]["type"]
     model_use_pretrained = config["model"]["use_pretrained"]
+
+    has_mode = False
+    model_mode = None
+    if "mode" in list(config["model"].keys()):
+        has_mode = True
+        model_mode = config["model"]["mode"] # specify mode for encoder
+
+    has_n_classes = False
+    model_n_classes = None
+    if "n_classes" in list(config["model"].keys()):
+        has_n_classes = True
+        model_n_classes = config["model"]["n_classes"]
 
     data_pipeline_key = config["data"]["pipeline"]
     dataset_config = config["data"]["config"]
@@ -103,7 +116,12 @@ def main():
     if model_type == "decoder":
         rafale_model = ComposerLM(model_config)
     elif model_type == "encoder":
-        rafale_model = EncoderWrapper(model_config)
+        assert has_mode
+        if model_mode == "cls":
+            assert has_n_classes
+            rafale_model = ComposerEncoderClassifier(model_config, mode=model_mode, num_classes=model_n_classes)
+        else:
+            raise NotImplementedError(f"Model mode: {model_mode} is not supported")
     else:
         raise TypeError(
             f"Model type {model_type} is not valid! Supports: encoder, decoder."
@@ -111,12 +129,6 @@ def main():
 
     if model_use_pretrained:
         rafale_model.model = load_safetensors(rafale_model.model, model_config)
-
-    # LOGGING #################################################################
-    # mem_logger = InMemoryLogger()
-    # @TODO :: add some logging options in the yaml
-    wandb_logger = WandBLogger(project="rafale", name=run_name)
-    # file_logger = FileLogger(filename=f"{run_name}-{time}".txt)
 
     # GRADIENT CLIPPING #######################################################
     clipping_type = "norm"  # can also be 'adaptive' or 'value'
@@ -166,6 +178,12 @@ def main():
         trainer.fit()
 
         return 0
+
+    # LOGGING #################################################################
+    # mem_logger = InMemoryLogger()
+    # @TODO :: add some logging options in the yaml
+    wandb_logger = WandBLogger(project="rafale", name=run_name)
+    # file_logger = FileLogger(filename=f"{run_name}-{time}".txt)
 
     # TRAIN ###################################################################
     # training subset must have key "train" then whatever is called the validation subset (i.e. test, val, validation,

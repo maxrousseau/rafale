@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from torchmetrics.classification import Accuracy
+from typing_extensions import Literal
 
 import torch
 import torch.nn.functional as F
@@ -6,6 +8,12 @@ import torch.nn.functional as F
 from torch import nn
 from torch.nn.functional import scaled_dot_product_attention
 
+from torchmetrics import Metric
+from torchmetrics.collections import MetricCollection
+from torchmetrics.classification.accuracy import BinaryAccuracy
+
+from composer.metrics import LossMetric, MaskedAccuracy
+from composer.models import ComposerModel
 
 ###############################################################################
 #                       SIMPLE BERT-like BUILDING BLOCKS                      #
@@ -243,9 +251,30 @@ class MLMHead(nn.Module):
 
         return x
 
+class ClsHead(nn.Module):
+    """Binary or multiclass classfification head for encoders.
+    The `pooling` layer (picks out the [CLS] token and a projection
+    """
+    def __init__(self, embed_dim, num_labels, dropout_p=None):
+        super().__init__()
+        self.dense = nn.Linear(embed_dim, embed_dim)
+        self.activation = nn.Tanh()
+
+        #self.dropout = nn.Dropout(dropout_p) # no dropout for now
+        self.out = nn.Linear(embed_dim, num_labels)
+
+    def forward(self, x):
+        first_token_tensor = x[:, 0] # first [CLS] token only
+
+        pooled_output = self.dense(first_token_tensor)
+        pooled_output = self.activation(pooled_output)
+
+        output = self.out(pooled_output)
+
+        return output
 
 class EncoderWrapper(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, mode : Literal["mlm", "cls"], num_classes=None):
         super().__init__()
         self.config = config
         self.embedding_layer = Embedding(
@@ -269,40 +298,105 @@ class EncoderWrapper(nn.Module):
                     dropout_p=config.hidden_dropout,
                 )
             )
+        if mode == "mlm":
+            self.head = MLMHead(
+                embed_dim=config.embed_dim,
+                eps=config.layer_norm_eps,
+                vocab_size=config.vocab_size,
+            )
+            # Tie the weights
+            self.mlm_head.decoder.weight = self.embedding_layer.word_embeddings.weight
+            # @NOTE :: bias are tied too with the HF model
+            # no bias for MLM head (?), let's keep it since the HF implementation keeps it as well
+            # self.mlm_head.mlm[-1].bias = None
+        elif mode == "cls":
+            self.head = ClsHead(
+                embed_dim=config.embed_dim,
+                num_labels=num_classes,
+                dropout_p=0.1,
+            )
+        else:
+            raise ValueError(f"Mode: {cls} is not valid.")
 
-        self.mlm_head = MLMHead(
-            embed_dim=config.embed_dim,
-            eps=config.layer_norm_eps,
-            vocab_size=config.vocab_size,
-        )
-
-        # Tie the weights
-        self.mlm_head.decoder.weight = self.embedding_layer.word_embeddings.weight
-        # @NOTE :: bias are tied too with the HF model
-
-    # no bias for MLM head (?), let's keep it since the HF implementation keeps it as well
-    # self.mlm_head.mlm[-1].bias = None
-    def forward(self, **kwargs):
-        input_ids = kwargs["input_ids"]
-        token_type_ids = kwargs["token_type_ids"]
+    def forward(self, batch):
+        input_ids = batch["input_ids"]
+        token_type_ids = batch["token_type_ids"]
 
         x = self.embedding_layer(input_ids, token_type_ids)
         # x = self.encoder_blocks(x)
         for block in self.blocks:
             x = block(x)
-        x = self.mlm_head(x)
+        x = self.head(x)
 
         return x
 
-    def compute_loss(self, logits, labels):
-        """ """
-        ce_loss = nn.CrossEntropyLoss(ignore_index=-100)
+class ComposerMLM(ComposerModel):
+   """wrapping the encoder for MLM training with CE masked loss"""
 
+   def __init__(self, config, mode) -> None:
+       super().__init__()
+       self.model = EncoderWrapper(config, mode="mlm")
+       self.ce_loss = nn.CrossEntropyLoss(ignore_index=-100)
+
+       self.train_metrics = MetricCollection(
+            [LossMetric(self.ce_loss), MaskedAccuracy()]
+        )
+       self.eval_metrics = MetricCollection(
+            [LossMetric(self.ce_loss), MaskedAccuracy()]
+        )
+
+   def loss(self, logits, labels):
+        """ """
         # Flatten the logits and labels
         logits = logits.view(
             -1, self.config.vocab_size
         )  # Adjust vocab_size as per your config
-        labels = labels.view(-1)
+        labels = labels.view(-2)
 
         # Compute and return the loss
-        return ce_loss(logits, labels)
+        return self.ce_loss(logits, labels)
+
+class ComposerEncoderClassifier(ComposerModel):
+   """wrapping the encoder for the trainer"""
+
+   def __init__(self, config, num_classes: int, mode: str = "cls") -> None:
+       super().__init__()
+       self.model = EncoderWrapper(config, mode=mode, num_classes=num_classes)
+       self.ce_loss = nn.CrossEntropyLoss()
+
+       task_type = None
+       if num_classes == 2:
+           task_type = "binary"
+       elif num_classes > 2:
+           task_type = "multiclass"
+       else: raise ValueError(f"num_class: {num_classes} should be and int of value >=2")
+
+       self.train_metrics = MetricCollection(
+            [LossMetric(self.ce_loss), Accuracy(task=task_type)]
+        )
+       self.eval_metrics = MetricCollection(
+            [LossMetric(self.ce_loss), Accuracy(task=task_type)]
+        )
+
+   def forward(self, batch):  # batch is the output of the dataloader
+        """batch is a dict with "input_ids" key, model also takes past_kv"""
+        # specify how batches are passed through the model
+        print(batch)
+        return self.model(batch)
+
+   def eval_forward(self, batch, outputs=False):
+        outputs = self.model(batch)
+        return outputs
+
+   def update_metric(self, batch, outputs, metric) -> None:
+        # targets = batch["labels"]
+        return metric.update(outputs.view(-1, self.model.vocab_size), targets.view(-1))
+
+   def get_metrics(self, is_train=False) -> dict[str, Metric]:
+        # defines which metrics to use in each phase of training
+        # return self.train_metrics if is_train else self.eval_metrics
+        return self.train_metrics if is_train else self.eval_metrics
+
+   def loss(self, outputs, batch):
+       labels = batch["labels"]
+       return self.ce_loss(outputs.view(-1, 2), labels.view(-1))

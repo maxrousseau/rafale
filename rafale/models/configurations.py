@@ -1,9 +1,11 @@
 import requests
 import os
+import warnings
 
 from dataclasses import dataclass
 
 from safetensors import safe_open
+from torch.jit import Error
 
 from ..caches import MODEL_CACHE_DIR
 
@@ -85,23 +87,6 @@ class BertConfig:
         False  # use xformers (todo: add FlashAttention2), NOT IMPLEMENTED*
     )
 
-
-@dataclass
-class BertTinyConfig:
-    embed_dim: int = 128
-    vocab_size: int = 30522  # could usage would be to 30522 + num_extra_tokens
-    attention_dropout: float = 0.1
-    hidden_dropout: float = 0.1
-    num_heads: int = 2
-    ff_dim: int = 512
-    max_pos_embedding: int = 512
-    layer_norm_eps: float = 1e-12
-    num_blocks: int = 2
-    pad_token_id: int = 0
-    num_token_type: int = 2
-    fast_attention: bool = False  # use xformers (todo: add FlashAttention2)
-
-
 @dataclass
 class RobertaConfig:
     embed_dim: int = 768
@@ -118,6 +103,67 @@ class RobertaConfig:
     bos_token_id: int = 0
     eos_token_id: int = 2
     fast_attention: bool = False
+
+
+@dataclass
+class BertTinyConfig:
+    name: str = "berttiny"
+    safetensors_url: str = (
+        "https://huggingface.co/google/bert_uncased_L-2_H-128_A-2/resolve/main/model.safetensors" # use `copy download link` on the hf repo
+    )
+
+    embed_dim: int = 128
+    vocab_size: int = 30522  # could usage would be to 30522 + num_extra_tokens
+    attention_dropout: float = 0.1
+    hidden_dropout: float = 0.1
+    num_heads: int = 2
+    ff_dim: int = 512
+    max_pos_embedding: int = 512
+    layer_norm_eps: float = 1e-12
+    num_blocks: int = 2
+    pad_token_id: int = 0
+    num_token_type: int = 2
+    fast_attention: bool = False  # use xformers (todo: add FlashAttention2)
+
+    @classmethod
+    def convert_params_dict(cls, target, source):
+        conversion = [
+            ("bert.embeddings", "embedding_layer"),
+            ("bert.encoder.layer", "blocks"),
+            ("attention.self", "attention.self_attn"),
+            ("attention.output.dense", "attention.out"),
+            ("attention.output.LayerNorm", "add_norm_1.ln"),
+            ("intermediate.dense", "ff.ff_in"),
+            ("output.dense", "ff.ff_out"),
+            ("output.LayerNorm", "add_norm_2.ln"),
+            ("cls.predictions.bias", "mlm_head.bias"),
+            ("cls.predictions.transform.dense", "mlm_head.dense"),
+            ("cls.predictions.transform.LayerNorm", "mlm_head.ln"),
+            ("cls.predictions.decoder", "mlm_head.decoder"),
+        ]
+
+        updated_parameters = {}
+        for k, v in source.items():
+            for hf_term, my_term in conversion:
+                if hf_term in k:
+                    k = k.replace(hf_term, my_term)
+
+            updated_parameters[k] = v
+
+        # here we transfer weights for all layers
+        # TODO : consider adding a flag here, or doing try/except and raising a warning...
+        try:
+            target.load_state_dict(updated_parameters, strict=True)
+        except:
+            try:
+                warnings.warn("Unable to load all parameters, some weights are randomly initialized.")
+                # the head is trained from scratch if using "cls" mode
+                target.load_state_dict(updated_parameters, strict=False) # the head is trained from scratch if using "cls" mode
+                pass
+            except:
+                raise ValueError
+
+        return target
 
 
 @dataclass
