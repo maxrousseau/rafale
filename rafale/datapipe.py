@@ -37,6 +37,8 @@ class DataPipeline(ABC):
         self.is_prepared: bool = kwargs["is_prepared"]
         self.dataset_path: str = os.path.expanduser(kwargs["dataset_path"])
 
+        self.shuffle_dataset: bool = kwargs["shuffle_dataset"]
+
         self.max_sequence_length: int = kwargs["max_sequence_length"]
         self.train_batch_size: int = kwargs["train_batch_size"]
         self.eval_batch_size: int = kwargs["eval_batch_size"]
@@ -110,6 +112,8 @@ class DataPipeline(ABC):
                 if subset == "train":
                     shuffle = self.shuffle_train
                     batch_size = self.train_batch_size
+                    if self.shuffle_dataset:
+                        self.dataset[subset] = self.dataset[subset].shuffle(seed=42)
                 else:
                     shuffle = False
                     batch_size = self.eval_batch_size

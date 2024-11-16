@@ -286,6 +286,7 @@ class EncoderWrapper(nn.Module):
             layer_norm_eps=config.layer_norm_eps,
             hidden_dropout_prob=config.hidden_dropout,
         )
+        self.token_type_ids = torch.ones(config.max_pos_embedding, dtype=torch.long)
 
         self.blocks = nn.ModuleList()
         for i in range(config.num_blocks):
@@ -320,7 +321,8 @@ class EncoderWrapper(nn.Module):
 
     def forward(self, batch):
         input_ids = batch["input_ids"]
-        token_type_ids = batch["token_type_ids"]
+        token_type_ids = self.token_type_ids
+        token_type_ids = token_type_ids.repeat(input_ids.size(0)).view(input_ids.size(0), -1)[:, :input_ids.size(1)]
 
         x = self.embedding_layer(input_ids, token_type_ids)
         # x = self.encoder_blocks(x)
@@ -364,24 +366,17 @@ class ComposerEncoderClassifier(ComposerModel):
        self.model = EncoderWrapper(config, mode=mode, num_classes=num_classes)
        self.ce_loss = nn.CrossEntropyLoss()
 
-       task_type = None
-       if num_classes == 2:
-           task_type = "binary"
-       elif num_classes > 2:
-           task_type = "multiclass"
-       else: raise ValueError(f"num_class: {num_classes} should be and int of value >=2")
-
+       # train as if multiclass for simplicity, works for binary/multiclassification setups
        self.train_metrics = MetricCollection(
-            [LossMetric(self.ce_loss), Accuracy(task=task_type)]
+            [LossMetric(self.ce_loss), Accuracy(task="multiclass", num_classes=num_classes)]
         )
        self.eval_metrics = MetricCollection(
-            [LossMetric(self.ce_loss), Accuracy(task=task_type)]
+            [LossMetric(self.ce_loss), Accuracy(task="multiclass", num_classes=2)]
         )
 
    def forward(self, batch):  # batch is the output of the dataloader
         """batch is a dict with "input_ids" key, model also takes past_kv"""
         # specify how batches are passed through the model
-        print(batch)
         return self.model(batch)
 
    def eval_forward(self, batch, outputs=False):
@@ -389,8 +384,8 @@ class ComposerEncoderClassifier(ComposerModel):
         return outputs
 
    def update_metric(self, batch, outputs, metric) -> None:
-        # targets = batch["labels"]
-        return metric.update(outputs.view(-1, self.model.vocab_size), targets.view(-1))
+        labels = batch["labels"]
+        metric.update(outputs.view(-1, 2), labels.view(-1))
 
    def get_metrics(self, is_train=False) -> dict[str, Metric]:
         # defines which metrics to use in each phase of training

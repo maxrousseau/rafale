@@ -26,9 +26,10 @@ data:
     num_processes: 8
     tokenizer_name: "bert"
     input_id_key: "input_ids"
-    train_batch_size: 1024
+    train_batch_size: 128
     eval_batch_size: 16
-    shuffle_train: True
+    shuffle_train: False
+    shuffle_dataset: True
     dataset_path: "stanfordnlp/imdb" # can be local or path to hf repo
     tokenizer_path: "google-bert/bert-base-uncased" # ^same
     max_sequence_length: 128 # might not be sufficient...
