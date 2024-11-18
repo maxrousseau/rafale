@@ -64,6 +64,7 @@ def main():
     run_n_epochs = config["run"]["n_epochs"]
     run_seed = config["run"]["seed"]
     run_save_interval = config["run"]["save_interval"]
+    run_eval_interval = config["run"]["eval_interval"]
 
     run_clip_type = config["run"]["clip_type"]
     run_clip_value = float(config["run"]["clip_value"])
@@ -208,7 +209,7 @@ def main():
         eval_dataloader=dataloaders[run_eval_key],
         optimizers=torch.optim.AdamW(rafale_model.parameters(), lr=run_max_lr),
         max_duration=run_n_epochs,  # num epochs
-        eval_interval="50ba",  # default is 1ep !
+        eval_interval=run_eval_interval,
         device_train_microbatch_size=device_bs,  # will handle gradient accumulation automatically
         device=device,
         loggers=[wandb_logger],

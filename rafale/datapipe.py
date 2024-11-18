@@ -82,7 +82,6 @@ class DataPipeline(ABC):
         output_path = f"{self.name}_{self.tokenizer_name}_bs{self.train_batch_size}_len{self.max_sequence_length}"
 
         assert DATA_CACHE_DIR[-1] == "/"
-
         save_path = os.path.abspath(os.path.join(DATA_CACHE_DIR, output_path))
 
         if os.path.isdir(DATA_CACHE_DIR):
@@ -254,8 +253,8 @@ class DefaultCollator:
         labels = [torch.tensor(example[self.label_key]) for example in features]
 
         return {
-            "input_ids": input_ids,
-            "labels": labels,
+            "input_ids": torch.tensor(input_ids),
+            "labels": torch.tensor(labels),
         }
 
 class TinyStoriesCausalNeoX(DataPipeline):

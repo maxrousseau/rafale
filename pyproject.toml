@@ -18,3 +18,7 @@ homepage = "https://github.com/maxrousseau/rafale"
 
 [tool.setuptools.packages.find]
 where = ["rafale"]
+
+[tool.pyright]
+venvPath = "."
+venv = ".venv"

@@ -58,7 +58,7 @@ class Embedding(nn.Module):
         self.position_embeddings = nn.Embedding(
             num_embeddings=max_sequence_length,
             embedding_dim=hidden_size,
-            padding_idx=pad_token_id,  # ROBERTA only?
+            # padding_idx=pad_token_id,  # ROBERTA only?
         )
         self.token_type_embeddings = nn.Embedding(
             num_token_type, hidden_size
@@ -76,10 +76,14 @@ class Embedding(nn.Module):
 
     def forward(self, input_ids, token_type_ids):
         seq_length = input_ids.size(1)
+        # move created tensor to same device
+        device = input_ids.get_device()
 
-        position_ids = torch.index_select(
-            self.position_ids, 1, torch.arange(seq_length)
-        )
+        position_ids = self.position_ids.clone()
+        position_ids = position_ids.to(device=device).type_as(input_ids)
+        token_type_ids = token_type_ids.to(device=device).type_as(input_ids)
+
+        position_ids = position_ids[:, :seq_length]
         position_ids = position_ids.expand_as(input_ids)
 
         # we assume absolute positional encoding here like in the original BERT and sum everything up
@@ -353,6 +357,7 @@ class ComposerMLM(ComposerModel):
         logits = logits.view(
             -1, self.config.vocab_size
         )  # Adjust vocab_size as per your config
+
         labels = labels.view(-2)
 
         # Compute and return the loss
