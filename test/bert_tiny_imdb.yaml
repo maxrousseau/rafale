@@ -11,6 +11,8 @@ run:
   clip_value: 1.0
   device_bs: "auto"
   save_interval: "200ba"
+  train_key: "train"
+  eval_key: "test"
 
 model:
   config: "berttiny" # config key
@@ -26,16 +28,17 @@ data:
     num_processes: 8
     tokenizer_name: "bert"
     input_id_key: "input_ids"
+    shuffle_dataset: True
     train_batch_size: 128
     eval_batch_size: 16
     shuffle_train: False
-    shuffle_dataset: True
     dataset_path: "stanfordnlp/imdb" # can be local or path to hf repo
     tokenizer_path: "google-bert/bert-base-uncased" # ^same
     max_sequence_length: 128 # might not be sufficient...
     pad_token_id: -100
     pad_inputs: True
     is_prepared: False
+    subset_key_mappings: { "train": "train", "test": "test" } # (source: target)
 
 logging: # @TODO :: not implemented
   use_wandb: True

@@ -48,6 +48,8 @@ class DataPipeline(ABC):
         self.input_id_key: str = kwargs["input_id_key"]
         self.shuffle_train: bool = kwargs["shuffle_train"]
 
+        self.subset_key_mappings = kwargs["subset_key_mappings"]
+
         self.num_processes: int = kwargs["num_processes"]
         self.tokenizer = Tokenizer.from_pretrained(kwargs["tokenizer_path"])
 
@@ -108,37 +110,37 @@ class DataPipeline(ABC):
             cache_dataset_path = self._check_path()
 
         if type(self.dataset) == DatasetDict:
-            for subset in self.dataset:
-                if subset == "train":
-                    shuffle = self.shuffle_train
+            for source_subset_key, dataloader_subset_key in self.subset_key_mappings.items():
+                if dataloader_subset_key == "train":
+                    shuffle = self.shuffle_train # shuffle training batches for multi-epoch training
                     batch_size = self.train_batch_size
                     if self.shuffle_dataset:
-                        self.dataset[subset] = self.dataset[subset].shuffle(seed=42)
+                        self.dataset[source_subset_key] = self.dataset[source_subset_key].shuffle(seed=42)
                 else:
                     shuffle = False
                     batch_size = self.eval_batch_size
 
                 # if the data is not ready to be passed to the dataloader
                 if not self.is_prepared:
-                    print(f"preparing subset {subset}")
-                    self.dataset[subset] = self._prepare(self.dataset[subset])
+                    print(f"preparing subset {source_subset_key} -> {dataloader_subset_key}")
+                    self.dataset[source_subset_key] = self._prepare(self.dataset[source_subset_key])
 
                 if self.use_cached:
                     self.dataset = DatasetDict.load_from_disk(cache_dataset_path)
 
-                self.dataloaders[subset] = DataLoader(
-                    self.dataset[subset],
+                self.dataloaders[dataloader_subset_key] = DataLoader(
+                    self.dataset[source_subset_key],
                     collate_fn=self.data_collator,
                     batch_size=batch_size,
                 )
-                print(f"✅ Dataloader ready for subset {subset}.")
+                print(f"✅ Dataloader ready for subset {dataloader_subset_key}.")
 
             if not self.is_prepared:
                 self.dataset.save_to_disk(cache_dataset_path)
                 print(f"✅ Saved prepared dataset at {cache_dataset_path}.")
         else:
             raise TypeError(
-                f"self.dataset is type {type(self.dataset)}, but should be DatasetDict."
+                f"dataset provided is type {type(self.dataset)}, but should be DatasetDict."
             )
 
         return self.dataloaders

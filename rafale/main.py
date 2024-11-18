@@ -75,6 +75,9 @@ def main():
     run_max_lr = float(config["run"]["max_lr"])  # learning rate
     run_warmup_pct = float(config["run"]["warmup_pct"])
 
+    run_eval_key = config["run"]["eval_key"]
+    run_train_key = config["run"]["train_key"]
+
     if run_schedule_type == "cosine-warmup":
         run_scheduler = CosineAnnealingWithWarmupScheduler(
             t_warmup=Time(run_warmup_pct, "dur"), alpha_f=0.1
@@ -188,11 +191,6 @@ def main():
     # TRAIN ###################################################################
     # training subset must have key "train" then whatever is called the validation subset (i.e. test, val, validation,
     # eval, etc) as long as there is only 1 other subset, we call it
-    dl_keys = list(dataloaders.keys())
-    assert "train" in dl_keys
-    dl_keys.remove("train")
-    assert len(dl_keys) == 1
-    eval_subset_key = dl_keys[0]
 
     # get datetime for checkpoint, directories are created by composer
     now = datetime.now()
@@ -206,8 +204,8 @@ def main():
     trainer = Trainer(
         model=rafale_model,
         seed=run_seed,
-        train_dataloader=dataloaders["train"],
-        eval_dataloader=dataloaders[eval_subset_key],
+        train_dataloader=dataloaders[run_train_key],
+        eval_dataloader=dataloaders[run_eval_key],
         optimizers=torch.optim.AdamW(rafale_model.parameters(), lr=run_max_lr),
         max_duration=run_n_epochs,  # num epochs
         eval_interval="50ba",  # default is 1ep !
