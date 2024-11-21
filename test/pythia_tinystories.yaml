@@ -6,16 +6,20 @@ run:
     warmup_pct: 0.01
     schedule: "cosine-warmup" # linear, linear-warmup, cosine, cosine-warmup
     optimizer: "AdamW"
-    eval_interval: "50ba"
+    eval_interval: "100ba"
     clip_type: "norm"
     clip_value: 1.0
     device_bs: "auto"
     save_interval: "200ba"
+    train_key: "train"
+    eval_key: "validation"
 
 model:
     config: "pythia14m" # config key
     type: "decoder"
     use_pretrained: True
+    # mode: None
+    # n_classes: None
 
 data:
     pipeline: "tinystories_neox" # the preprocessing/tokenization pipeline
@@ -23,7 +27,6 @@ data:
         name: "tinystories"
         num_processes: 8
         tokenizer_name: "neox"
-        is_prepared: False
         shuffle_dataset: True # this will shufflle the whole training dataset once
         input_id_key: "input_ids"
         train_batch_size: 1024
@@ -35,6 +38,7 @@ data:
         pad_token_id: -100
         pad_inputs: True
         is_prepared: False
+        subset_key_mappings: { "train": "train", "validation": "validation" } # (source: target)
 
 logging: # @TODO :: not implemented
     use_wandb: True

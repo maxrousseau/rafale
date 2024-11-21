@@ -1,4 +1,6 @@
 import os
+import json
+import hashlib
 import warnings
 from abc import ABC, abstractmethod
 
@@ -13,6 +15,8 @@ from torch.nn.utils.rnn import pad_sequence
 
 from rafale.caches import DATA_CACHE_DIR
 
+def compute_config_hash(serialized_config):
+    return hashlib.sha256(serialized_config.encode('utf-8')).hexdigest()
 
 class DataPipeline(ABC):
     """
@@ -57,6 +61,15 @@ class DataPipeline(ABC):
 
         self.use_cached = False
 
+        self.serialized_config = json.dumps(kwargs)
+        self.config_dict = kwargs
+        self.config_hash = compute_config_hash(self.serialized_config)
+
+    def _dump_config(self, config_dict, output_dir):
+        out_file = os.path.join(output_dir, "data_config.json")
+        with open(out_file, 'w') as f:
+            json.dump(config_dict, f, indent=4)
+
     def _load(self):
         # either load directly from disk or from an hf dataset repo
         try:
@@ -79,7 +92,7 @@ class DataPipeline(ABC):
 
     def _check_path(self):
         """make sure that the dataset has not already been parsed at location"""
-        output_path = f"{self.name}_{self.tokenizer_name}_bs{self.train_batch_size}_len{self.max_sequence_length}"
+        output_path = f"{self.name}_{self.tokenizer_name}_bs{self.train_batch_size}_len{self.max_sequence_length}_{self.config_hash}"
 
         assert DATA_CACHE_DIR[-1] == "/"
         save_path = os.path.abspath(os.path.join(DATA_CACHE_DIR, output_path))
@@ -136,6 +149,7 @@ class DataPipeline(ABC):
 
             if not self.is_prepared:
                 self.dataset.save_to_disk(cache_dataset_path)
+                self._dump_config(self.config_dict, cache_dataset_path)
                 print(f"✅ Saved prepared dataset at {cache_dataset_path}.")
         else:
             raise TypeError(
