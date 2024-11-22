@@ -536,7 +536,6 @@ class ComposerLM(ComposerModel):
     """wrapper with nice properties for simple training and evaluation"""
 
     def __init__(self, config):
-        "docstring"
         super().__init__()
         self.model = DecoderWrapper(config)
         self.ce_loss = nn.CrossEntropyLoss()

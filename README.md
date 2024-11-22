@@ -43,23 +43,28 @@ $ uv pip install -e .
 Launch a run with a configuration.
 
 ```sh
-$ python rafale.main -c test/pythia_tinystories.yaml
+$ rafale-run test/pythia_tinystories.yaml
 ```
 
 What if I just want to prepare my dataset? ```DATA=1``` will run the data preparation and caching pipeline without
 launching the training run.
 
 ```sh
-$ DATA=1 python rafale.main -c test/pythia_tinystories.yaml
+$ DATA=1 rafale-run test/pythia_tinystories.yaml
 ```
 
 What if I want to test my model to make sure that its learning? ```DEBUG=1``` will run 10 epochs on a single training
 batch (same for train/eval), the model should fit quickly if there are no bugs in the implementation.
 
 ```sh
-$ DEBUG=1 python rafale.main -c test/pythia_tinystories.yaml
+$ DEBUG=1 rafale-run test/pythia_tinystories.yaml
 ```
 
+By default we hash the configuration and to save checkpoints. If we find that the same run exists we either continue running if it has failed or was stopped. If it was sucessful it is aborted. To duplicate a run, simply set ```FORCE=1```
+
+```sh
+$ FORCE=1 rafale-run test/pythia_tinystories.yaml
+```
 
 ### 🔧 Under the hood
 
@@ -94,10 +99,10 @@ Append this file ```llm-docprompt.txt``` to your favorite LLM and ask away.
 
 | Name        | Implemented | Inference test | Training test |
 |:------------|:------------|:---------------|:--------------|
-| BERT        | ✅          |                |               |
+| BERT        | ✅          |                | ✅              |
 | RoBERTa     | ✅          |                |               |
 | Pythia      | ✅          | ✅             | ✅           |
-| CLIP/SigLIP | ⏳          |                |               |
+| AIM         | ⏳          |                |               |
 
 
 ## 🔮 Roadmap
@@ -112,19 +117,19 @@ Append this file ```llm-docprompt.txt``` to your favorite LLM and ask away.
   - [x] CPU macos build - Ok, uv run works with this
   - [x] local linux machine - for now uv for venv + requirements.txt
   - [ ] SLURM compute-canada - TBD
-    - NOTE: because uv still does not fully play well with pytorch recommend semi-manual setup*
+    - NOTE: because uv still does not fully play well with pytorch recommend semi-manual setup* > soon no need for that
 - [ ] load weights from safetensors and include it in the config (BERT/RoBERTa and Pythia)
   - [x] pythia
-  - [ ] BERT/RoBERTa (need to move from HF to safetensors)
+  - [x] BERT/RoBERTa (need to move from HF to safetensors)
     - [ ] MLM
-    - [ ] Classification
+    - [x] Classification
 - [x] Pythia KV-cache implementation
 - [x] greedy generation
 - [ ] datapipes for CLM and MLM
   - local dataloader for now
   - [x] CLM tinystories
   - [ ] MLM tinystories
-  - [ ] Imdb classification
+  - [x] Imdb classification
 - [x] ```main.py``` handles both training and evaluation (together or separately)
 - [x] Mosaic Composer/Trainer
   + [x] fp16
@@ -153,7 +158,7 @@ cleanup and additional features
 - [ ] optimizations : flash attn2, xformers layer_norm (triton) or RMSNorm, xformers fused_linear_layer
 - [ ] try out schedulefree, SOAP, and other optimizers
 - [ ] **layerwise decay** for fine-tuning (https://kozodoi.me/blog/20220329/discriminative-lr)
-- [ ] multimodality CLIP
+- [ ] multimodality AIM (simpler autoregressive training)
 - [ ] integration with lm-eval-harness (guide)[https://github.com/EleutherAI/lm-evaluation-harness/blob/main/docs/interface.md#external-library-usage]
 
 </details>
