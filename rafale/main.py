@@ -1,5 +1,8 @@
 from ast import Mod
 import os
+import warnings
+import json
+import hashlib
 import argparse
 import yaml
 import time
@@ -29,7 +32,7 @@ from rafale.models.configurations import (
     RobertaConfig,
 )
 
-from rafale.caches import CHECKPOINT_CACHE_DIR
+from rafale.caches import CHECKPOINT_CACHE_DIR, compute_config_hash, dump_config
 from rafale.datapipe import TinyStoriesCausalNeoX, ImdbClsBERT, InferenceDatapipeline
 
 ENV_VARS = {key: value for key, value in os.environ.items()}
@@ -55,6 +58,22 @@ data_pipeline_dict = {
     "imdb_bert" : ImdbClsBERT
 }
 
+def save_output_run_status(status: int, output_dir: str):
+    with open(os.path.join(output_dir, "run.out"), 'w') as f:
+        f.write(str(status))
+
+
+def check_run_status(output_dir: str) -> int:
+    try:
+        with open(os.path.join(output_dir, "run.out"), 'r') as f:
+            content = f.read().strip()  # Read and strip whitespace
+            if content in {'0', '1'}:  # Check if content is '0' or '1'
+                return int(content)
+            else:
+                raise ValueError("Invalid content in run.out. Expected '0' or '1'.")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"run.out not found in directory: {output_dir}")
+
 def main():
     # CONFIG ##################################################################
     with open(args.training_config, "r") as f:
@@ -65,6 +84,9 @@ def main():
     run_seed = config["run"]["seed"]
     run_save_interval = config["run"]["save_interval"]
     run_eval_interval = config["run"]["eval_interval"]
+
+    serialized_run_config = json.dumps(config)
+    run_hash = compute_config_hash(serialized_run_config)
 
     run_clip_type = config["run"]["clip_type"]
     run_clip_value = float(config["run"]["clip_value"])
@@ -88,21 +110,21 @@ def main():
             f"Model type {model_type} is not valid! Supports: cosine-warmup.\nlinear, cosine, and linear-warmup planned"
         )
 
-    model_config_key = config["model"]["config"]
-    model_type = config["model"]["type"]
-    model_use_pretrained = config["model"]["use_pretrained"]
+    model_config_key = config["run"]["model"]["config"]
+    model_type = config["run"]["model"]["type"]
+    model_use_pretrained = config["run"]["model"]["use_pretrained"]
 
     has_mode = False
     model_mode = None
-    if "mode" in list(config["model"].keys()):
+    if "mode" in list(config["run"]["model"].keys()):
         has_mode = True
-        model_mode = config["model"]["mode"] # specify mode for encoder
+        model_mode = config["run"]["model"]["mode"] # specify mode for encoder
 
     has_n_classes = False
     model_n_classes = None
-    if "n_classes" in list(config["model"].keys()):
+    if "n_classes" in list(config["run"]["model"].keys()):
         has_n_classes = True
-        model_n_classes = config["model"]["n_classes"]
+        model_n_classes = config["run"]["model"]["n_classes"]
 
     data_pipeline_key = config["data"]["pipeline"]
     dataset_config = config["data"]["config"]
@@ -193,14 +215,35 @@ def main():
     # training subset must have key "train" then whatever is called the validation subset (i.e. test, val, validation,
     # eval, etc) as long as there is only 1 other subset, we call it
 
-    # get datetime for checkpoint, directories are created by composer
+    # check path*
+    checkpoint_folder = os.path.abspath(
+        os.path.join(CHECKPOINT_CACHE_DIR, f"{run_name}-{run_hash}/")
+    )
+    latest_checkpoint_load_path = None
     now = datetime.now()
     formatted_date = now.strftime(
         "%d" + "d" + "%m" + "m" + "%Y" + "y" + "_%H" + "h" + "%M" + "m"
     )  # Format it as DDdMMmYYYYy_HHhMMm
-    checkpoint_folder = os.path.abspath(
-        os.path.join(CHECKPOINT_CACHE_DIR, f"{run_name}-{formatted_date}/")
-    )
+
+    if os.path.isdir(checkpoint_folder):
+        warnings.warn(f"Run with same configuration already exists at location:\n\t{checkpoint_folder}")
+        previously_failed = check_run_status(checkpoint_folder)
+
+        if "FORCE" in ENV_VARS.keys() and ENV_VARS["FORCE"] == "1":
+            # get datetime for checkpoint, directories are created by composer
+            print("Forcing new training run from scratch!")
+
+            checkpoint_folder = os.path.abspath(
+                os.path.join(CHECKPOINT_CACHE_DIR, f"{run_name}-{run_hash}-{formatted_date}/")
+            )
+        elif previously_failed:
+            # restart run from latest checkpoint*
+            print(f"Previous run failed, attempting to restart from latest checkpoint!")
+            latest_checkpoint_load_path = os.path.join(checkpoint_folder, "latest")
+
+        else:
+            print("ABORTING run launch! Use FORCE=1 to duplicate the training run with same configuration.")
+            return 1
 
     trainer = Trainer(
         model=rafale_model,
@@ -220,12 +263,20 @@ def main():
         save_folder=checkpoint_folder,
         save_latest_filename="latest",
         save_interval=run_save_interval,
+        load_path=latest_checkpoint_load_path
     )
 
-    # launch
-    trainer.fit()
-    print(f"🍻 TRAINING COMPLETE\n💾 CHECKPOINTS SAVED AT LOCATION: {checkpoint_folder}")
+    dump_config(config, checkpoint_folder, name=f"run-{formatted_date}")
 
+    # launch
+    try:
+        trainer.fit()
+        save_output_run_status(0, checkpoint_folder)
+        print(f"🍻 TRAINING COMPLETE\n💾 CHECKPOINTS SAVED AT LOCATION: {checkpoint_folder}")
+
+    except:
+        save_output_run_status(1, checkpoint_folder)
+        print(f"❌ ERROR OCCURED, CHECKPOINTS/LOG AT {checkpoint_folder}")
 
 if __name__ == "__main__":
     main()

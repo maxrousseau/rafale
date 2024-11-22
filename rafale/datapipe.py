@@ -13,10 +13,7 @@ import torch
 from torch.utils.data import DataLoader
 from torch.nn.utils.rnn import pad_sequence
 
-from rafale.caches import DATA_CACHE_DIR
-
-def compute_config_hash(serialized_config):
-    return hashlib.sha256(serialized_config.encode('utf-8')).hexdigest()
+from rafale.caches import DATA_CACHE_DIR, compute_config_hash, dump_config
 
 class DataPipeline(ABC):
     """
@@ -64,11 +61,6 @@ class DataPipeline(ABC):
         self.serialized_config = json.dumps(kwargs)
         self.config_dict = kwargs
         self.config_hash = compute_config_hash(self.serialized_config)
-
-    def _dump_config(self, config_dict, output_dir):
-        out_file = os.path.join(output_dir, "data_config.json")
-        with open(out_file, 'w') as f:
-            json.dump(config_dict, f, indent=4)
 
     def _load(self):
         # either load directly from disk or from an hf dataset repo
@@ -149,7 +141,7 @@ class DataPipeline(ABC):
 
             if not self.is_prepared:
                 self.dataset.save_to_disk(cache_dataset_path)
-                self._dump_config(self.config_dict, cache_dataset_path)
+                dump_config(self.config_dict, cache_dataset_path, "data")
                 print(f"✅ Saved prepared dataset at {cache_dataset_path}.")
         else:
             raise TypeError(

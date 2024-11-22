@@ -10,16 +10,15 @@ run:
     clip_type: "norm"
     clip_value: 1.0
     device_bs: "auto"
-    save_interval: "200ba"
+    save_interval: "50ba"
     train_key: "train"
     eval_key: "validation"
-
-model:
-    config: "pythia14m" # config key
-    type: "decoder"
-    use_pretrained: True
-    # mode: None
-    # n_classes: None
+    model:
+        config: "pythia14m" # config key
+        type: "decoder"
+        use_pretrained: True
+        # mode: None
+        # n_classes: None
 
 data:
     pipeline: "tinystories_neox" # the preprocessing/tokenization pipeline
@@ -40,9 +39,10 @@ data:
         is_prepared: False
         subset_key_mappings: { "train": "train", "validation": "validation" } # (source: target)
 
-logging: # @TODO :: not implemented
-    use_wandb: True
-    use_file: False
-    eval_interval: "10ba"
-    log_dir: "./run_logs"
-    checkpoint_dir: "./checkpoints"
+# logging: # @TODO :: not implemented
+#     use_wandb: True
+#     use_file: False
+#     eval_interval: "10ba"
+#     log_dir: "./run_logs"
+#     checkpoint_dir: "./checkpoints"
+#

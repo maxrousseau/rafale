@@ -13,13 +13,12 @@ run:
     save_interval: "200ba"
     train_key: "train"
     eval_key: "test"
-
-model:
-    config: "berttiny" # config key
-    type: "encoder"
-    mode: "cls"
-    n_classes: 2 # not used unless multiclass classification
-    use_pretrained: True
+    model:
+        config: "berttiny" # config key
+        type: "encoder"
+        mode: "cls"
+        n_classes: 2 # not used unless multiclass classification
+        use_pretrained: True
 
 data:
     pipeline: "imdb_bert" # the preprocessing/tokenization pipeline
@@ -39,10 +38,11 @@ data:
         pad_inputs: True
         is_prepared: False
         subset_key_mappings: { "train": "train", "test": "test" } # (source: target)
-
-logging: # @TODO :: not implemented
-    use_wandb: True
-    use_file: False
-    eval_interval: "10ba"
-    log_dir: "./run_logs"
-    checkpoint_dir: "./checkpoints"
+#
+# logging: # @TODO :: not implemented
+#     use_wandb: True
+#     use_file: False
+#     eval_interval: "10ba"
+#     log_dir: "./run_logs"
+#     checkpoint_dir: "./checkpoints"
+#
