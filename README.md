@@ -60,7 +60,7 @@ batch (same for train/eval), the model should fit quickly if there are no bugs i
 $ DEBUG=1 rafale-run test/pythia_tinystories.yaml
 ```
 
-By default we hash the configuration and to save checkpoints. If we find that the same run exists we either continue running if it has failed or was stopped. If it was sucessful it is aborted. To duplicate a run, simply set ```FORCE=1```
+By default we hash the configuration and to save checkpoints. If we find that the same run exists we either continue running if it has failed or was stopped. If it was sucessful it is aborted. To duplicate a run, simply set ```FORCE=1```.
 
 ```sh
 $ FORCE=1 rafale-run test/pythia_tinystories.yaml

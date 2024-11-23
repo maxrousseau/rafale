@@ -15,6 +15,7 @@ import composer
 from composer import Trainer, Time
 from composer.loggers import InMemoryLogger, WandBLogger, FileLogger
 from composer.algorithms import GradientClipping
+from composer.callbacks import LRMonitor
 from composer.optim.scheduler import (
     CosineAnnealingWithWarmupScheduler,
     CosineAnnealingScheduler,
@@ -248,6 +249,7 @@ def main():
     trainer = Trainer(
         model=rafale_model,
         seed=run_seed,
+        callbacks=[LRMonitor()],
         train_dataloader=dataloaders[run_train_key],
         eval_dataloader=dataloaders[run_eval_key],
         optimizers=torch.optim.AdamW(rafale_model.parameters(), lr=run_max_lr),
@@ -261,6 +263,7 @@ def main():
         schedulers=run_scheduler,
         algorithms=[gradient_clip],
         save_folder=checkpoint_folder,
+        save_overwrite=True,
         save_latest_filename="latest",
         save_interval=run_save_interval,
         load_path=latest_checkpoint_load_path
