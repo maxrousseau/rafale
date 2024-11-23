@@ -110,7 +110,6 @@ Append this file ```llm-docprompt.txt``` to your favorite LLM and ask away.
 <details>
   <summary>v0.1</summary>
 
-
 ### v0.1 - initial release
 - [x] single entrypoint CLI
 - [ ] simple deploy/build
