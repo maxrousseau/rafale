@@ -278,7 +278,7 @@ class ClsHead(nn.Module):
         return output
 
 class EncoderWrapper(nn.Module):
-    def __init__(self, config, mode : Literal["mlm", "cls"], num_classes=None):
+    def __init__(self, config, mode : Literal["mlm", "cls", "embed"], num_classes=None):
         super().__init__()
         self.config = config
         self.embedding_layer = Embedding(
@@ -320,6 +320,8 @@ class EncoderWrapper(nn.Module):
                 num_labels=num_classes,
                 dropout_p=0.1,
             )
+        elif mode == "embed":
+            self.head = None
         else:
             raise ValueError(f"Mode: {cls} is not valid.")
 
@@ -332,7 +334,9 @@ class EncoderWrapper(nn.Module):
         # x = self.encoder_blocks(x)
         for block in self.blocks:
             x = block(x)
-        x = self.head(x)
+
+        if self.head is not None:
+            x = self.head(x)
 
         return x
 
