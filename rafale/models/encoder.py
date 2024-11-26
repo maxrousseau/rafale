@@ -78,6 +78,8 @@ class Embedding(nn.Module):
         seq_length = input_ids.size(1)
         # move created tensor to same device
         device = input_ids.get_device()
+        if device == -1:
+            device = "cpu"
 
         position_ids = self.position_ids.clone()
         position_ids = position_ids.to(device=device).type_as(input_ids)
