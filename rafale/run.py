@@ -32,7 +32,6 @@ from rafale.datapipe import TinyStoriesCausalNeoX, ImdbClsBERT
 class TrainingRun:
     def __init__(self):
         # CONFIG ##################################################################
-
         self.ENV_VARS = {key: value for key, value in os.environ.items()}
 
         self.model_config_dict = {
@@ -83,6 +82,8 @@ class TrainingRun:
         self.model_config_key = self.config["run"]["model"]["config"]
         self.model_type = self.config["run"]["model"]["type"]
         self.model_use_pretrained = self.config["run"]["model"]["use_pretrained"]
+        self.model_config = self.model_config_dict[self.model_config_key]
+
 
         if self.run_schedule_type == "cosine-warmup":
             self.run_scheduler = CosineAnnealingWithWarmupScheduler(
@@ -119,16 +120,14 @@ class TrainingRun:
         return dataloaders
 
     def _get_model(self):
-        model_config = self.model_config_dict[self.model_config_key]
-
         if self.model_type == "decoder":
-            rafale_model = ComposerLM(model_config)
+            rafale_model = ComposerLM(self.model_config)
         elif self.model_type == "encoder":
             assert self.has_mode
             if self.model_mode == "cls":
                 assert self.has_n_classes
                 rafale_model = ComposerEncoderClassifier(
-                    model_config, mode=self.model_mode, num_classes=self.model_n_classes
+                    self.model_config, mode=self.model_mode, num_classes=self.model_n_classes
                 )
             else:
                 raise NotImplementedError(
@@ -140,7 +139,7 @@ class TrainingRun:
             )
 
         if self.model_use_pretrained:
-            rafale_model.model = load_safetensors(rafale_model.model, model_config)
+            rafale_model.model = load_safetensors(rafale_model.model, self.model_config)
 
         return rafale_model
 
