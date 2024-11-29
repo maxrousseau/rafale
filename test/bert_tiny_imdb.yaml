@@ -1,43 +1,43 @@
 run:
-    name: "bert_tiny-imdb" # name of your experiment, used for checkpointing
-    seed: 42
-    n_epochs: 2
-    max_lr: 6e-04
-    warmup_pct: 0.01
-    schedule: "cosine-warmup" # linear, linear-warmup, cosine, cosine-warmup
-    optimizer: "AdamW"
-    eval_interval: "1ep"
-    clip_type: "norm"
-    clip_value: 1.0
-    device_bs: "auto"
-    save_interval: "200ba"
-    train_key: "train"
-    eval_key: "test"
-    model:
-        config: "berttiny" # config key
-        type: "encoder"
-        mode: "cls"
-        n_classes: 2 # not used unless multiclass classification
-        use_pretrained: True
+  name: "bert_tiny-imdb" # name of your experiment, used for checkpointing
+  seed: 42
+  n_epochs: 2
+  max_lr: 6e-04
+  warmup_pct: 0.01
+  schedule: "cosine-warmup" # linear, linear-warmup, cosine, cosine-warmup
+  optimizer: "AdamW"
+  eval_interval: "1ep"
+  clip_type: "norm"
+  clip_value: 1.0
+  device_bs: 4 # "auto"
+  save_interval: "200ba"
+  train_key: "train"
+  eval_key: "test"
+  model:
+    config: "berttiny" # config key
+    type: "encoder"
+    mode: "cls"
+    n_classes: 2 # not used unless multiclass classification
+    use_pretrained: True
 
 data:
-    pipeline: "imdb_bert" # the preprocessing/tokenization pipeline
-    config:
-        name: "imdb"
-        num_processes: 8
-        tokenizer_name: "bert"
-        input_id_key: "input_ids"
-        shuffle_dataset: True
-        train_batch_size: 128
-        eval_batch_size: 16
-        shuffle_train: False
-        dataset_path: "stanfordnlp/imdb" # can be local or path to hf repo
-        tokenizer_path: "google-bert/bert-base-uncased" # ^same
-        max_sequence_length: 128 # might not be sufficient...
-        pad_token_id: 0 # only use -100 for the labels if doing MLM to ignore in loss term
-        pad_inputs: True
-        is_prepared: False
-        subset_key_mappings: { "train": "train", "test": "test" } # (source: target)
+  pipeline: "imdb_bert" # the preprocessing/tokenization pipeline
+  config:
+    name: "imdb"
+    num_processes: 8
+    tokenizer_name: "bert"
+    input_id_key: "input_ids"
+    shuffle_dataset: True
+    train_batch_size: 128
+    eval_batch_size: 16
+    shuffle_train: False
+    dataset_path: "stanfordnlp/imdb" # can be local or path to hf repo
+    tokenizer_path: "google-bert/bert-base-uncased" # ^same
+    max_sequence_length: 128 # might not be sufficient...
+    pad_token_id: 0 # only use -100 for the labels if doing MLM to ignore in loss term
+    pad_inputs: True
+    is_prepared: False
+    subset_key_mappings: { "train": "train", "test": "test" } # (source: target)
 #
 # logging: # @TODO :: not implemented
 #     use_wandb: True
