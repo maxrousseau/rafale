@@ -307,7 +307,7 @@ class TrainingRun:
             dataloaders,
             model,
             loggers=[wandb_logger],
-            checkpoint_folder=None,
+            checkpoint_folder=checkpoint_folder,
             algo_list=[gradient_clip],
             latest_checkpoint_load_path=latest_checkpoint_load_path)
 
