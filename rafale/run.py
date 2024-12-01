@@ -103,6 +103,8 @@ class TrainingRun:
             self.run_scheduler = CosineAnnealingWithWarmupScheduler(
                 t_warmup=Time(self.run_warmup_pct, "dur"), alpha_f=0.1
             )
+        elif self.run_schedule_type == 0:
+            self.run_scheduler = None
         else:
             raise TypeError(
                 f"Model type {self.model_type} is not valid! Supports: cosine-warmup.\nlinear, cosine, and linear-warmup planned"
