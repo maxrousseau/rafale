@@ -1,33 +1,47 @@
+import argparse
+import json
 import os
 import warnings
-import json
-import argparse
-import yaml
 from datetime import datetime
 
 import torch
 import torch.utils.data
-
-from composer import Trainer, Time
-from composer.loggers import WandBLogger
+import yaml
+from composer import Time, Trainer
 from composer.algorithms import GradientClipping
 from composer.callbacks import LRMonitor
+from composer.loggers import WandBLogger
 from composer.optim.scheduler import (
     CosineAnnealingWithWarmupScheduler,
 )
 
+from rafale.caches import CHECKPOINT_CACHE_DIR, compute_config_hash, dump_config
+from rafale.datapipe import ImdbClsBERT, TinyStoriesCausalNeoX
+from rafale.models.configurations import (
+    BertConfig,
+    BertTinyConfig,
+    Pythia14MConfig,
+    RobertaConfig,
+    load_safetensors,
+)
 from rafale.models.decoder import ComposerLM
 from rafale.models.encoder import ComposerEncoderClassifier
-from rafale.models.configurations import (
-    load_safetensors,
-    Pythia14MConfig,
-    BertTinyConfig,
-    BertConfig,
-    RobertaConfig,
-)
 
-from rafale.caches import CHECKPOINT_CACHE_DIR, compute_config_hash, dump_config
-from rafale.datapipe import TinyStoriesCausalNeoX, ImdbClsBERT
+
+def save_output_run_status(status: int, output_dir: str):
+    with open(os.path.join(output_dir, "run.out"), "w") as f:
+        f.write(str(status))
+
+def check_run_status(output_dir: str) -> int:
+    try:
+        with open(os.path.join(output_dir, "run.out"), "r") as f:
+            content = f.read().strip()  # Read and strip whitespace
+            if content in {"0", "1"}:  # Check if content is '0' or '1'
+                return int(content)
+            else:
+                raise ValueError("Invalid content in run.out. Expected '0' or '1'.")
+    except FileNotFoundError:
+        raise FileNotFoundError(f"run.out not found in directory: {output_dir}")
 
 class TrainingRun:
     def __init__(self):
@@ -144,8 +158,8 @@ class TrainingRun:
         return rafale_model
 
     def _debug_run(self, dataloaders, model):
-        from torch.utils.data import DataLoader, default_collate
         from datasets import Dataset
+        from torch.utils.data import DataLoader, default_collate
 
         # single batch, same for train and test 10 epochs
         bs = 4
